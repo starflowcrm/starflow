@@ -237,6 +237,7 @@ export default function InboxPage() {
                 </Button>
               </div>
               <SendLockedModal
+                key={lockedModalOpen ? "open" : "closed"}
                 open={lockedModalOpen}
                 onOpenChange={setLockedModalOpen}
                 conversationId={selectedConv.id}

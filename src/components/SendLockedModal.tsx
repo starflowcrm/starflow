@@ -101,7 +101,7 @@ export function SendLockedModal({
       open={open}
       onOpenChange={(v) => {
         onOpenChange(v);
-        if (!v) reset();
+        reset();
       }}
     >
       <DialogContent className="bg-[#1a1a1a] border-white/10 sm:max-w-md">

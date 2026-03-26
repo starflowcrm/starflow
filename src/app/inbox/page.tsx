@@ -220,11 +220,6 @@ export default function InboxPage() {
                     Chatters
                   </Button>
                 </Link>
-                <Link href="/vault">
-                  <Button variant="ghost" size="sm" className="text-xs h-8">
-                    🔒 Vault
-                  </Button>
-                </Link>
               </>
             )}
           </nav>
@@ -355,6 +350,7 @@ export default function InboxPage() {
                 open={lockedModalOpen}
                 onOpenChange={setLockedModalOpen}
                 conversationId={selectedConv.id}
+                conversationAccountId={selectedConv.telegram_account_id}
                 onSent={(msg) => {
                   setMessages((prev) => [...prev, msg]);
                 }}

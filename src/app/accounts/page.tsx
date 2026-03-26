@@ -9,14 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { getAuthData, accountsApi, botTokenApi, clearAuth } from "@/lib/api";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { getAuthData, accountsApi, clearAuth } from "@/lib/api";
 import { starflowWS } from "@/lib/ws";
 
 interface Account {
@@ -30,15 +24,6 @@ interface Account {
   proxy_port: number | null;
   proxy_username: string | null;
   proxy_password: string | null;
-}
-
-interface BotTokenState {
-  hasBotToken: boolean;
-  botTokenPreview: string | null;
-  businessConnectionId: string;
-  botToken: string;
-  saving: boolean;
-  error: string;
 }
 
 export default function AccountsPage() {
@@ -65,36 +50,6 @@ export default function AccountsPage() {
   const [authToken, setAuthToken] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-
-  // Proxy modal state
-  const [proxyDialogOpen, setProxyDialogOpen] = useState(false);
-  const [proxyAccountId, setProxyAccountId] = useState<number | null>(null);
-  const [proxyHost, setProxyHost] = useState("");
-  const [proxyPort, setProxyPort] = useState("");
-  const [proxyUsername, setProxyUsername] = useState("");
-  const [proxyPassword, setProxyPassword] = useState("");
-  const [proxySaving, setProxySaving] = useState(false);
-
-  // Per-account bot token state
-  const [botTokenMap, setBotTokenMap] = useState<Record<number, BotTokenState>>({});
-  const [expandedBotSettings, setExpandedBotSettings] = useState<Set<number>>(new Set());
-
-  const getBotState = (accountId: number): BotTokenState =>
-    botTokenMap[accountId] || {
-      hasBotToken: false,
-      botTokenPreview: null,
-      businessConnectionId: "",
-      botToken: "",
-      saving: false,
-      error: "",
-    };
-
-  const updateBotState = (accountId: number, updates: Partial<BotTokenState>) => {
-    setBotTokenMap((prev) => ({
-      ...prev,
-      [accountId]: { ...getBotState(accountId), ...updates },
-    }));
-  };
 
   useEffect(() => {
     const authData = getAuthData();
@@ -136,63 +91,11 @@ export default function AccountsPage() {
     try {
       const data = await accountsApi.list();
       setAccounts(data);
-      // Load bot token status for each account
-      for (const account of data) {
-        loadBotTokenForAccount(account.id);
-      }
     } catch {
       // ignore
     } finally {
       setLoading(false);
     }
-  };
-
-  const loadBotTokenForAccount = async (accountId: number) => {
-    try {
-      const data = await botTokenApi.get(accountId);
-      updateBotState(accountId, {
-        hasBotToken: data.has_bot_token,
-        botTokenPreview: data.bot_token_preview,
-        businessConnectionId: data.business_connection_id || "",
-      });
-    } catch {
-      // ignore — endpoint may not exist per-account yet, fall back gracefully
-    }
-  };
-
-  const handleSaveBotToken = async (accountId: number) => {
-    const state = getBotState(accountId);
-    updateBotState(accountId, { saving: true, error: "" });
-    try {
-      const payload: Record<string, string> = {};
-      if (state.botToken) payload.bot_token = state.botToken;
-      payload.business_connection_id = state.businessConnectionId;
-      const result = await botTokenApi.update(payload, accountId);
-      updateBotState(accountId, {
-        hasBotToken: !!result.bot_token,
-        botTokenPreview: result.bot_token,
-        businessConnectionId: result.business_connection_id || "",
-        botToken: "",
-        saving: false,
-      });
-    } catch (err) {
-      updateBotState(accountId, {
-        saving: false,
-        error: err instanceof Error ? err.message : "Failed to save",
-      });
-    }
-  };
-
-  const toggleBotSettings = (accountId: number) => {
-    setExpandedBotSettings((prev) => {
-      const next = new Set(prev);
-      if (next.has(accountId)) {
-        next.delete(accountId);
-      } else {
-        next.add(accountId);
-      }
-      return next;
-    });
   };
 
   // --- QR Code auth ---
@@ -317,73 +220,6 @@ export default function AccountsPage() {
     setQrAuthToken("");
     setQrStatus("idle");
     clearQrTimers();
-  };
-
-  // --- Proxy ---
-
-  const openProxyDialog = (account: Account) => {
-    setProxyAccountId(account.id);
-    setProxyHost(account.proxy_host || "");
-    setProxyPort(account.proxy_port ? String(account.proxy_port) : "");
-    setProxyUsername(account.proxy_username || "");
-    setProxyPassword(account.proxy_password || "");
-    setProxyDialogOpen(true);
-  };
-
-  const handleSaveProxy = async () => {
-    if (!proxyAccountId) return;
-    setProxySaving(true);
-    try {
-      await accountsApi.updateProxy(proxyAccountId, {
-        proxy_host: proxyHost || null,
-        proxy_port: proxyPort ? parseInt(proxyPort) : null,
-        proxy_username: proxyUsername || null,
-        proxy_password: proxyPassword || null,
-      });
-      setAccounts((prev) =>
-        prev.map((a) =>
-          a.id === proxyAccountId
-            ? {
-                ...a,
-                proxy_host: proxyHost || null,
-                proxy_port: proxyPort ? parseInt(proxyPort) : null,
-                proxy_username: proxyUsername || null,
-                proxy_password: proxyPassword || null,
-              }
-            : a
-        )
-      );
-      setProxyDialogOpen(false);
-    } catch {
-      // ignore
-    } finally {
-      setProxySaving(false);
-    }
-  };
-
-  const handleClearProxy = async () => {
-    if (!proxyAccountId) return;
-    setProxySaving(true);
-    try {
-      await accountsApi.updateProxy(proxyAccountId, {
-        proxy_host: null,
-        proxy_port: null,
-        proxy_username: null,
-        proxy_password: null,
-      });
-      setAccounts((prev) =>
-        prev.map((a) =>
-          a.id === proxyAccountId
-            ? { ...a, proxy_host: null, proxy_port: null, proxy_username: null, proxy_password: null }
-            : a
-        )
-      );
-      setProxyDialogOpen(false);
-    } catch {
-      // ignore
-    } finally {
-      setProxySaving(false);
-    }
   };
 
   if (loading) {
@@ -600,10 +436,7 @@ export default function AccountsPage() {
               </CardContent>
             </Card>
           ) : (
-            accounts.map((account) => {
-              const botState = getBotState(account.id);
-              const isExpanded = expandedBotSettings.has(account.id);
-              return (
+            accounts.map((account) => (
                 <Card key={account.id} className="bg-[#1a1a1a] border-white/10">
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
@@ -628,33 +461,20 @@ export default function AccountsPage() {
                         >
                           {account.is_active ? "Active" : "Disconnected"}
                         </Badge>
+                        <Link href={`/accounts/${account.id}`}>
+                          <Button variant="ghost" size="sm" className="text-blue-400 hover:text-blue-300 text-xs">
+                            Dashboard &rarr;
+                          </Button>
+                        </Link>
                         {account.is_active && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className={`text-xs ${isExpanded ? "text-blue-400" : "text-muted-foreground hover:text-white"}`}
-                              onClick={() => toggleBotSettings(account.id)}
-                            >
-                              Bot Settings
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-muted-foreground hover:text-white"
-                              onClick={() => openProxyDialog(account)}
-                            >
-                              Set Proxy
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-400 hover:text-red-300"
-                              onClick={() => handleDisconnect(account.id)}
-                            >
-                              Disconnect
-                            </Button>
-                          </>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-400 hover:text-red-300"
+                            onClick={() => handleDisconnect(account.id)}
+                          >
+                            Disconnect
+                          </Button>
                         )}
                       </div>
                     </div>
@@ -670,138 +490,13 @@ export default function AccountsPage() {
                         </div>
                       )}
                     </div>
-
-                    {/* Per-account bot settings (collapsible) */}
-                    {isExpanded && (
-                      <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
-                        <p className="text-xs font-semibold text-white/60 uppercase tracking-wide">
-                          Bot for Locked Media
-                        </p>
-
-                        {botState.hasBotToken && botState.botTokenPreview && (
-                          <div className="flex items-center gap-2 text-sm text-green-400 bg-green-400/10 px-3 py-2 rounded-lg">
-                            <span>Bot connected: {botState.botTokenPreview}</span>
-                          </div>
-                        )}
-
-                        {botState.error && (
-                          <div className="text-sm text-red-400 bg-red-400/10 p-2 rounded">
-                            {botState.error}
-                          </div>
-                        )}
-
-                        <div className="space-y-1">
-                          <Label className="text-xs">
-                            Bot Token <span className="text-white/40">(from @BotFather) — each account needs its own bot</span>
-                          </Label>
-                          <Input
-                            type="password"
-                            placeholder={botState.hasBotToken ? "Enter new token to replace existing" : "e.g. 8123456789:AAFxxx..."}
-                            value={botState.botToken}
-                            onChange={(e) => updateBotState(account.id, { botToken: e.target.value })}
-                            className="bg-[#0f0f0f] border-white/10"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label className="text-xs">
-                            Business Connection ID <span className="text-white/40">(optional)</span>
-                          </Label>
-                          <Input
-                            placeholder="Sent by your bot when you add it as a Business Bot"
-                            value={botState.businessConnectionId}
-                            onChange={(e) => updateBotState(account.id, { businessConnectionId: e.target.value })}
-                            className="bg-[#0f0f0f] border-white/10"
-                          />
-                        </div>
-
-                        <p className="text-xs text-muted-foreground">
-                          Stars earned go to this bot&apos;s wallet. Withdraw via BotFather &rarr; Monetization &rarr; Withdraw.
-                        </p>
-
-                        <Button
-                          size="sm"
-                          className="bg-blue-600 hover:bg-blue-700"
-                          onClick={() => handleSaveBotToken(account.id)}
-                          disabled={botState.saving || (!botState.botToken && !botState.businessConnectionId)}
-                        >
-                          {botState.saving ? "Saving..." : "Save Bot Settings"}
-                        </Button>
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
-              );
-            })
+              ))
           )}
         </div>
       </div>
 
-      {/* Proxy Dialog */}
-      <Dialog open={proxyDialogOpen} onOpenChange={setProxyDialogOpen}>
-        <DialogContent className="bg-[#1a1a1a] border-white/10 sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>SOCKS5 Proxy Settings</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Proxy Host</Label>
-              <Input
-                placeholder="127.0.0.1"
-                value={proxyHost}
-                onChange={(e) => setProxyHost(e.target.value)}
-                className="bg-[#0f0f0f] border-white/10"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Proxy Port</Label>
-              <Input
-                type="number"
-                placeholder="1080"
-                value={proxyPort}
-                onChange={(e) => setProxyPort(e.target.value)}
-                className="bg-[#0f0f0f] border-white/10"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Username (optional)</Label>
-              <Input
-                placeholder="user"
-                value={proxyUsername}
-                onChange={(e) => setProxyUsername(e.target.value)}
-                className="bg-[#0f0f0f] border-white/10"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Password (optional)</Label>
-              <Input
-                type="password"
-                placeholder="pass"
-                value={proxyPassword}
-                onChange={(e) => setProxyPassword(e.target.value)}
-                className="bg-[#0f0f0f] border-white/10"
-              />
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
-                onClick={handleSaveProxy}
-                disabled={proxySaving}
-              >
-                {proxySaving ? "Saving..." : "Save"}
-              </Button>
-              <Button
-                variant="ghost"
-                className="text-muted-foreground hover:text-white"
-                onClick={handleClearProxy}
-                disabled={proxySaving}
-              >
-                Clear
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

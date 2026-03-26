@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export interface Conversation {
@@ -122,6 +123,16 @@ export function AccountSwitcher({
                 {unread}
               </span>
             )}
+
+            {/* Settings link */}
+            <Link
+              href={`/accounts/${acc.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-white/30 hover:text-white/70 flex-shrink-0 text-sm"
+              title="Account settings"
+            >
+              &#9881;&#65039;
+            </Link>
           </button>
         );
       })}

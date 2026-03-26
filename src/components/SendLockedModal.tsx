@@ -24,6 +24,7 @@ interface SendLockedModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   conversationId: number;
+  conversationAccountId?: number;
   onSent: (message: {
     id: number;
     conversation_id: number;
@@ -37,7 +38,7 @@ interface SendLockedModalProps {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export function SendLockedModal({ open, onOpenChange, conversationId, onSent }: SendLockedModalProps) {
+export function SendLockedModal({ open, onOpenChange, conversationId, conversationAccountId, onSent }: SendLockedModalProps) {
   const [tab, setTab] = useState<"upload" | "vault">("upload");
   const [starCount, setStarCount] = useState("100");
   const [caption, setCaption] = useState("");
@@ -66,7 +67,8 @@ export function SendLockedModal({ open, onOpenChange, conversationId, onSent }: 
     if (tab === "vault" && open && vaultItems.length === 0) {
       setVaultLoading(true);
       const token = getAuthData()?.token;
-      fetch(`${API_BASE}/vault/`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      const vaultUrl = conversationAccountId ? `${API_BASE}/vault/?account_id=${conversationAccountId}` : `${API_BASE}/vault/`;
+      fetch(vaultUrl, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
         .then(r => r.json())
         .then(data => { setVaultItems(Array.isArray(data) ? data : []); })
         .catch(() => {})

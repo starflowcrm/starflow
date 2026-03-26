@@ -180,7 +180,8 @@ export const messagesApi = {
 
 // Vault
 export const vaultApi = {
-  list: () => request("/vault/"),
+  list: (accountId?: number) =>
+    request(accountId ? `/vault/?account_id=${accountId}` : "/vault/"),
   upload: async (formData: FormData) => {
     const token = getAuthData()?.token;
     const res = await fetch(`${API_BASE}/vault/`, {

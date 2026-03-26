@@ -631,12 +631,43 @@ export default function AccountsPage() {
       <div className="max-w-4xl mx-auto px-6 pb-6">
         <Card className="bg-[#1a1a1a] border-white/10">
           <CardHeader>
-            <CardTitle className="text-base">Connect Bot (for Locked Media)</CardTitle>
+            <CardTitle className="text-base">🔒 Set Up Locked Media (Your Own Bot)</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              To send Stars-gated locked photos and videos, each account needs its own Telegram bot. Stars paid by fans go directly into <strong>your bot&apos;s wallet</strong> — you cash them out anytime via BotFather → Monetization → Withdraw.
+            </p>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4">
+            {/* Step-by-step instructions */}
+            <div className="bg-[#0f0f0f] border border-white/10 rounded-lg p-4 space-y-3">
+              <p className="text-xs font-semibold text-white/60 uppercase tracking-wide">How to set up your bot</p>
+              <ol className="space-y-2 text-sm text-white/80">
+                <li className="flex gap-2">
+                  <span className="text-blue-400 font-bold shrink-0">1.</span>
+                  <span>Open Telegram and message <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-blue-400 underline">@BotFather</a></span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-blue-400 font-bold shrink-0">2.</span>
+                  <span>Send <code className="bg-white/10 px-1 rounded">/newbot</code> — choose any name and username</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-blue-400 font-bold shrink-0">3.</span>
+                  <span>Copy the bot token BotFather gives you and paste it below</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-blue-400 font-bold shrink-0">4.</span>
+                  <span>In BotFather: <code className="bg-white/10 px-1 rounded">/mybots</code> → your bot → Bot Settings → <strong>Allow Business Connections</strong> → Enable</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-blue-400 font-bold shrink-0">5.</span>
+                  <span><em>(Requires Telegram Premium)</em> Go to Telegram Settings → Telegram Business → Chatbots → add your bot. It will DM you your Business Connection ID.</span>
+                </li>
+              </ol>
+            </div>
+
             {hasBotToken && botTokenPreview && (
-              <div className="text-sm text-green-400">
-                Bot token configured: {botTokenPreview}
+              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-400/10 px-3 py-2 rounded-lg">
+                <span>✅</span>
+                <span>Bot connected: {botTokenPreview}</span>
               </div>
             )}
             {botError && (
@@ -645,25 +676,25 @@ export default function AccountsPage() {
               </div>
             )}
             <div className="space-y-1">
-              <Label className="text-xs">Bot Token</Label>
+              <Label className="text-xs">Bot Token <span className="text-white/40">(from @BotFather)</span></Label>
               <Input
                 type="password"
-                placeholder={hasBotToken ? "Enter new token to replace" : "Paste your bot token from @BotFather"}
+                placeholder={hasBotToken ? "Enter new token to replace existing" : "e.g. 8123456789:AAFxxx..."}
                 value={botToken}
                 onChange={(e) => setBotToken(e.target.value)}
                 className="bg-[#0f0f0f] border-white/10"
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Business Connection ID (optional)</Label>
+              <Label className="text-xs">Business Connection ID <span className="text-white/40">(optional — needed for Personal Chat injection)</span></Label>
               <Input
-                placeholder="From businessConnection update"
+                placeholder="Sent to you by your bot when you add it as a Business Bot"
                 value={businessConnectionId}
                 onChange={(e) => setBusinessConnectionId(e.target.value)}
                 className="bg-[#0f0f0f] border-white/10"
               />
               <p className="text-xs text-muted-foreground">
-                Required to send locked media on behalf of the connected account
+                Only needed if you want to send locked media directly inside your personal Telegram chats. Requires Telegram Premium.
               </p>
             </div>
             <Button

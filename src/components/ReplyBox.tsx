@@ -31,7 +31,7 @@ export function ReplyBox({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex items-center gap-2 p-4 border-t border-white/10 bg-[#0f0f0f]"
+      className="flex items-center gap-2 p-3 bg-transparent"
     >
       <Input
         value={text}

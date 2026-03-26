@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
+  AccountSwitcher,
   ConversationList,
   type Conversation,
+  type AccountInfo,
 } from "@/components/ConversationList";
 import { MessageThread, type Message } from "@/components/MessageThread";
 import { ReplyBox } from "@/components/ReplyBox";
@@ -26,9 +28,8 @@ export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [accounts, setAccounts] = useState<
-    { id: number; phone: string; display_name: string | null }[]
-  >([]);
+  const [accounts, setAccounts] = useState<AccountInfo[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [lockedModalOpen, setLockedModalOpen] = useState(false);
 
@@ -54,8 +55,12 @@ export default function InboxPage() {
     try {
       const data = await accountsApi.list();
       setAccounts(data);
+      // Default to first account if none selected
+      if (data.length > 0) {
+        setSelectedAccountId((prev) => prev ?? data[0].id);
+      }
     } catch {
-      // chatters might not have access
+      // chatters might not have access — show all conversations
     }
   }, []);
 
@@ -79,7 +84,6 @@ export default function InboxPage() {
 
         setMessages((prev) => {
           if (prev.length > 0 && prev[0]?.conversation_id === convId) {
-            // Deduplicate by telegram_message_id
             if (
               msg.telegram_message_id &&
               prev.some(
@@ -93,7 +97,6 @@ export default function InboxPage() {
           return prev;
         });
 
-        // Update conversation list
         loadConversations();
       }
     );
@@ -102,7 +105,6 @@ export default function InboxPage() {
       loadConversations();
     });
 
-    // Handle message updates (e.g. paid media unlocked)
     const unsubUpdate = starflowWS.on("message_updated", (data: Record<string, unknown>) => {
       const msg = data.message as Message;
       const convId = data.conversation_id as number;
@@ -122,12 +124,46 @@ export default function InboxPage() {
     };
   }, [auth, loadConversations]);
 
+  // Filtered conversations for selected account
+  const filteredConversations = useMemo(() => {
+    if (!selectedAccountId) return conversations;
+    return conversations.filter(
+      (c) => c.telegram_account_id === selectedAccountId
+    );
+  }, [conversations, selectedAccountId]);
+
+  // Conversation counts per account (total + unread)
+  const conversationCounts = useMemo(() => {
+    const map = new Map<number, { total: number; unread: number }>();
+    for (const c of conversations) {
+      const existing = map.get(c.telegram_account_id) || { total: 0, unread: 0 };
+      existing.total += 1;
+      existing.unread += c.unread_count;
+      map.set(c.telegram_account_id, existing);
+    }
+    return map;
+  }, [conversations]);
+
+  // Find the account for the selected conversation
+  const selectedAccount = useMemo(() => {
+    if (!selectedConv) return null;
+    return accounts.find((a) => a.id === selectedConv.telegram_account_id) ?? null;
+  }, [selectedConv, accounts]);
+
+  const handleSelectAccount = (accountId: number) => {
+    setSelectedAccountId(accountId);
+    // Clear selected conversation if it belongs to a different account
+    if (selectedConv && selectedConv.telegram_account_id !== accountId) {
+      setSelectedConv(null);
+      setMessages([]);
+    }
+  };
+
   const handleSelectConversation = async (conv: Conversation) => {
     setSelectedConv(conv);
     try {
       const msgs = await conversationsApi.getMessages(conv.id);
       setMessages(msgs);
-      // Reset unread in local state
       setConversations((prev) =>
         prev.map((c) => (c.id === conv.id ? { ...c, unread_count: 0 } : c))
       );
@@ -150,7 +186,7 @@ export default function InboxPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a]">
         <div className="animate-pulse text-muted-foreground">
           Loading inbox...
         </div>
@@ -159,28 +195,28 @@ export default function InboxPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#0f0f0f]">
+    <div className="h-screen flex flex-col bg-[#0a0a0a]">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#0f0f0f]">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.06] bg-[#0e0e0e]">
         <div className="flex items-center gap-4">
           <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
             Starflow
           </span>
-          <nav className="flex items-center gap-2">
+          <nav className="flex items-center gap-1">
             <Link href="/inbox">
-              <Button variant="ghost" size="sm" className="text-white">
+              <Button variant="ghost" size="sm" className="text-white text-xs h-8">
                 Inbox
               </Button>
             </Link>
             {auth?.role === "agency" && (
               <>
                 <Link href="/accounts">
-                  <Button variant="ghost" size="sm">
+                  <Button variant="ghost" size="sm" className="text-xs h-8">
                     Accounts
                   </Button>
                 </Link>
                 <Link href="/chatters">
-                  <Button variant="ghost" size="sm">
+                  <Button variant="ghost" size="sm" className="text-xs h-8">
                     Chatters
                   </Button>
                 </Link>
@@ -189,11 +225,11 @@ export default function InboxPage() {
           </nav>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-muted-foreground">{auth?.name}</span>
+          <span className="text-xs text-muted-foreground">{auth?.name}</span>
           <span className="text-[10px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded-full uppercase tracking-wider font-medium">
             {auth?.role}
           </span>
-          <Button variant="ghost" size="sm" onClick={handleLogout}>
+          <Button variant="ghost" size="sm" className="text-xs h-8" onClick={handleLogout}>
             Logout
           </Button>
         </div>
@@ -201,54 +237,114 @@ export default function InboxPage() {
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Conversation list */}
-        <div className="w-80 border-r border-white/10 bg-[#0f0f0f] flex flex-col">
-          <div className="p-3 border-b border-white/10">
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              Conversations
-            </h2>
+        {/* ── Sidebar ── */}
+        <div className="w-80 border-r border-white/[0.06] bg-[#0a0a0a] flex flex-col">
+          {/* Account switcher */}
+          <div className="border-b border-white/[0.06]">
+            <div className="px-4 pt-3 pb-1.5">
+              <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+                Accounts
+              </h3>
+            </div>
+            <AccountSwitcher
+              accounts={accounts}
+              selectedAccountId={selectedAccountId}
+              onSelect={handleSelectAccount}
+              conversationCounts={conversationCounts}
+            />
           </div>
-          <ConversationList
-            conversations={conversations}
-            accounts={accounts}
-            selectedId={selectedConv?.id ?? null}
-            onSelect={handleSelectConversation}
-          />
+
+          {/* Conversation list */}
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="px-4 pt-3 pb-1.5">
+              <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+                Conversations
+                {filteredConversations.length > 0 && (
+                  <span className="ml-1.5 text-muted-foreground/50">
+                    {filteredConversations.length}
+                  </span>
+                )}
+              </h3>
+            </div>
+            <ConversationList
+              conversations={filteredConversations}
+              selectedId={selectedConv?.id ?? null}
+              onSelect={handleSelectConversation}
+            />
+          </div>
         </div>
 
-        {/* Message thread */}
+        {/* ── Chat panel ── */}
         <div className="flex-1 flex flex-col bg-[#111111]">
           {selectedConv ? (
             <>
-              <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-                <div>
-                  <div className="font-semibold text-sm">
-                    {selectedConv.peer_name}
+              {/* Chat header */}
+              <div className="px-5 py-3 border-b border-white/[0.06] bg-[#0e0e0e] flex items-center gap-4">
+                {/* Contact avatar */}
+                <div className="w-9 h-9 rounded-full bg-[#2a2a2a] flex items-center justify-center text-white/60 text-sm font-medium flex-shrink-0">
+                  {(selectedConv.peer_name || "?")
+                    .split(/\s+/)
+                    .map((w) => w[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 2)}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-sm text-white">
+                      {selectedConv.peer_name}
+                    </span>
+                    {selectedConv.peer_username && (
+                      <span className="text-xs text-muted-foreground">
+                        @{selectedConv.peer_username}
+                      </span>
+                    )}
                   </div>
-                  {selectedConv.peer_username && (
-                    <div className="text-xs text-muted-foreground">
-                      @{selectedConv.peer_username}
+                  {selectedAccount && (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[11px] text-muted-foreground/60">
+                        via
+                      </span>
+                      <div
+                        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                        style={{
+                          backgroundColor:
+                            ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
+                              "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16"][
+                              selectedAccount.id % 10
+                            ],
+                        }}
+                      />
+                      <span className="text-[11px] text-muted-foreground/60">
+                        {selectedAccount.display_name || selectedAccount.phone}
+                      </span>
                     </div>
                   )}
                 </div>
               </div>
+
+              {/* Messages */}
               <MessageThread
                 messages={messages}
                 peerName={selectedConv.peer_name}
               />
-              <div className="flex items-center gap-0 bg-[#0f0f0f]">
+
+              {/* Reply area */}
+              <div className="flex items-center gap-0 bg-[#0e0e0e] border-t border-white/[0.06]">
                 <div className="flex-1">
                   <ReplyBox onSend={handleSend} />
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="mr-3 text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10 whitespace-nowrap"
+                  className="mr-3 text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10 whitespace-nowrap text-xs h-8"
                   onClick={() => setLockedModalOpen(true)}
                 >
                   Send Locked
                 </Button>
               </div>
+
               <SendLockedModal
                 key={lockedModalOpen ? "open" : "closed"}
                 open={lockedModalOpen}
@@ -260,8 +356,9 @@ export default function InboxPage() {
               />
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-muted-foreground">
-              Select a conversation to start messaging
+            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2">
+              <div className="text-4xl opacity-20">💬</div>
+              <div className="text-sm">Select a conversation to start messaging</div>
             </div>
           )}
         </div>

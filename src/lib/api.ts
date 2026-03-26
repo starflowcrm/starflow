@@ -154,19 +154,27 @@ export const messagesApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  sendPaidMediaForm: (formData: FormData) => {
+  sendPaidMediaForm: async (formData: FormData) => {
     const token = getAuthData()?.token;
-    return fetch(`${API_BASE}/messages/send-paid-media-form`, {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
-    }).then(async (r) => {
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: r.statusText }));
-        throw new Error(err.detail || "Failed to send");
-      }
-      return r.json();
-    });
+    const url = `${API_BASE}/messages/send-paid-media-form`;
+    console.log("[sendPaidMediaForm] posting to:", url, "token:", token ? "present" : "MISSING");
+    let r: Response;
+    try {
+      r = await fetch(url, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+    } catch (networkErr) {
+      console.error("[sendPaidMediaForm] network error:", networkErr);
+      throw new Error(`Network error: ${networkErr instanceof Error ? networkErr.message : String(networkErr)}`);
+    }
+    console.log("[sendPaidMediaForm] response status:", r.status);
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: r.statusText }));
+      throw new Error(err.detail || "Failed to send");
+    }
+    return r.json();
   },
 };
 

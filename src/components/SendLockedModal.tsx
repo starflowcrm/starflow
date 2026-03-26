@@ -83,7 +83,9 @@ export function SendLockedModal({
       reset();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send");
+      const msg = err instanceof Error ? err.message : "Failed to send";
+      console.error("Send locked media error:", err);
+      setError(msg);
     } finally {
       setSending(false);
     }

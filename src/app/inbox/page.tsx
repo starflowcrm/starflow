@@ -220,6 +220,11 @@ export default function InboxPage() {
                     Chatters
                   </Button>
                 </Link>
+                <Link href="/vault">
+                  <Button variant="ghost" size="sm" className="text-xs h-8">
+                    🔒 Vault
+                  </Button>
+                </Link>
               </>
             )}
           </nav>

@@ -178,6 +178,26 @@ export const messagesApi = {
   },
 };
 
+// Vault
+export const vaultApi = {
+  list: () => request("/vault/"),
+  upload: async (formData: FormData) => {
+    const token = getAuthData()?.token;
+    const res = await fetch(`${API_BASE}/vault/`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || "Upload failed");
+    }
+    return res.json();
+  },
+  delete: (id: number) =>
+    request(`/vault/${id}`, { method: "DELETE" }),
+};
+
 // Bot token (per-account)
 export const botTokenApi = {
   get: (accountId?: number) =>

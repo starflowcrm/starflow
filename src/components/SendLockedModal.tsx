@@ -69,22 +69,15 @@ export function SendLockedModal({
     setError("");
 
     try {
-      // Read file as base64
-      const buffer = await file.arrayBuffer();
-      const base64 = btoa(
-        new Uint8Array(buffer).reduce(
-          (data, byte) => data + String.fromCharCode(byte),
-          ""
-        )
-      );
+      // Use FormData for file upload (avoids base64 memory issues with large files)
+      const formData = new FormData();
+      formData.append("conversation_id", String(conversationId));
+      formData.append("star_count", String(stars));
+      formData.append("media_type", mediaType);
+      if (caption) formData.append("caption", caption);
+      formData.append("file", file);
 
-      const result = await messagesApi.sendPaidMedia({
-        conversation_id: conversationId,
-        star_count: stars,
-        file_data: base64,
-        media_type: mediaType,
-        caption: caption || undefined,
-      });
+      const result = await messagesApi.sendPaidMediaForm(formData);
 
       onSent(result);
       reset();

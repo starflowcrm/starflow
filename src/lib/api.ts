@@ -154,6 +154,20 @@ export const messagesApi = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  sendPaidMediaForm: (formData: FormData) => {
+    const token = getAuthData()?.token;
+    return fetch(`${API_BASE}/messages/send-paid-media-form`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    }).then(async (r) => {
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || "Failed to send");
+      }
+      return r.json();
+    });
+  },
 };
 
 // Bot token (per-account)

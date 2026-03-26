@@ -102,9 +102,22 @@ export default function InboxPage() {
       loadConversations();
     });
 
+    // Handle message updates (e.g. paid media unlocked)
+    const unsubUpdate = starflowWS.on("message_updated", (data: Record<string, unknown>) => {
+      const msg = data.message as Message;
+      const convId = data.conversation_id as number;
+      setMessages((prev) => {
+        if (prev.length > 0 && prev[0]?.conversation_id === convId) {
+          return prev.map((m) => m.id === msg.id ? { ...m, text: msg.text } : m);
+        }
+        return prev;
+      });
+    });
+
     return () => {
       unsubMsg();
       unsubConv();
+      unsubUpdate();
       starflowWS.disconnect();
     };
   }, [auth, loadConversations]);

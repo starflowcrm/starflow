@@ -32,6 +32,15 @@ interface Account {
   proxy_password: string | null;
 }
 
+interface BotTokenState {
+  hasBotToken: boolean;
+  botTokenPreview: string | null;
+  businessConnectionId: string;
+  botToken: string;
+  saving: boolean;
+  error: string;
+}
+
 export default function AccountsPage() {
   const router = useRouter();
   const [auth, setAuth] = useState<ReturnType<typeof getAuthData>>(null);
@@ -66,13 +75,26 @@ export default function AccountsPage() {
   const [proxyPassword, setProxyPassword] = useState("");
   const [proxySaving, setProxySaving] = useState(false);
 
-  // Bot token state
-  const [botToken, setBotToken] = useState("");
-  const [businessConnectionId, setBusinessConnectionId] = useState("");
-  const [botTokenPreview, setBotTokenPreview] = useState<string | null>(null);
-  const [hasBotToken, setHasBotToken] = useState(false);
-  const [botSaving, setBotSaving] = useState(false);
-  const [botError, setBotError] = useState("");
+  // Per-account bot token state
+  const [botTokenMap, setBotTokenMap] = useState<Record<number, BotTokenState>>({});
+  const [expandedBotSettings, setExpandedBotSettings] = useState<Set<number>>(new Set());
+
+  const getBotState = (accountId: number): BotTokenState =>
+    botTokenMap[accountId] || {
+      hasBotToken: false,
+      botTokenPreview: null,
+      businessConnectionId: "",
+      botToken: "",
+      saving: false,
+      error: "",
+    };
+
+  const updateBotState = (accountId: number, updates: Partial<BotTokenState>) => {
+    setBotTokenMap((prev) => ({
+      ...prev,
+      [accountId]: { ...getBotState(accountId), ...updates },
+    }));
+  };
 
   useEffect(() => {
     const authData = getAuthData();
@@ -90,7 +112,6 @@ export default function AccountsPage() {
   useEffect(() => {
     if (!auth) return;
     loadAccounts();
-    loadBotToken();
   }, [auth]);
 
   // WebSocket listener for QR auth success
@@ -102,7 +123,6 @@ export default function AccountsPage() {
       if (data.auth_token === qrAuthToken) {
         setQrStatus("success");
         setAccounts((prev) => [...prev, data.account]);
-        // Close dialog after brief success animation
         setTimeout(() => {
           setDialogOpen(false);
           resetDialog();
@@ -116,6 +136,10 @@ export default function AccountsPage() {
     try {
       const data = await accountsApi.list();
       setAccounts(data);
+      // Load bot token status for each account
+      for (const account of data) {
+        loadBotTokenForAccount(account.id);
+      }
     } catch {
       // ignore
     } finally {
@@ -123,34 +147,52 @@ export default function AccountsPage() {
     }
   };
 
-  const loadBotToken = async () => {
+  const loadBotTokenForAccount = async (accountId: number) => {
     try {
-      const data = await botTokenApi.get();
-      setHasBotToken(data.has_bot_token);
-      setBotTokenPreview(data.bot_token_preview);
-      setBusinessConnectionId(data.business_connection_id || "");
+      const data = await botTokenApi.get(accountId);
+      updateBotState(accountId, {
+        hasBotToken: data.has_bot_token,
+        botTokenPreview: data.bot_token_preview,
+        businessConnectionId: data.business_connection_id || "",
+      });
     } catch {
-      // ignore
+      // ignore — endpoint may not exist per-account yet, fall back gracefully
     }
   };
 
-  const handleSaveBotToken = async () => {
-    setBotSaving(true);
-    setBotError("");
+  const handleSaveBotToken = async (accountId: number) => {
+    const state = getBotState(accountId);
+    updateBotState(accountId, { saving: true, error: "" });
     try {
       const payload: Record<string, string> = {};
-      if (botToken) payload.bot_token = botToken;
-      payload.business_connection_id = businessConnectionId;
-      const result = await botTokenApi.update(payload);
-      setHasBotToken(!!result.bot_token);
-      setBotTokenPreview(result.bot_token);
-      setBusinessConnectionId(result.business_connection_id || "");
-      setBotToken("");
+      if (state.botToken) payload.bot_token = state.botToken;
+      payload.business_connection_id = state.businessConnectionId;
+      const result = await botTokenApi.update(payload, accountId);
+      updateBotState(accountId, {
+        hasBotToken: !!result.bot_token,
+        botTokenPreview: result.bot_token,
+        businessConnectionId: result.business_connection_id || "",
+        botToken: "",
+        saving: false,
+      });
     } catch (err) {
-      setBotError(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setBotSaving(false);
+      updateBotState(accountId, {
+        saving: false,
+        error: err instanceof Error ? err.message : "Failed to save",
+      });
     }
+  };
+
+  const toggleBotSettings = (accountId: number) => {
+    setExpandedBotSettings((prev) => {
+      const next = new Set(prev);
+      if (next.has(accountId)) {
+        next.delete(accountId);
+      } else {
+        next.add(accountId);
+      }
+      return next;
+    });
   };
 
   // --- QR Code auth ---
@@ -165,7 +207,6 @@ export default function AccountsPage() {
       setQrAuthToken(result.auth_token);
       setQrStatus("pending");
 
-      // Poll for status every 2s as fallback
       const pollId = setInterval(async () => {
         try {
           const status = await accountsApi.qrStatus(result.auth_token);
@@ -190,7 +231,6 @@ export default function AccountsPage() {
       }, 2000);
       qrPollTimer.current = pollId;
 
-      // Auto-refresh after 30s if still pending
       const refreshId = setTimeout(() => {
         setQrStatus("expired");
         clearInterval(pollId);
@@ -213,7 +253,6 @@ export default function AccountsPage() {
     }
   };
 
-  // Start QR auth when dialog opens on QR tab
   useEffect(() => {
     if (dialogOpen && activeTab === "qr" && qrStatus === "idle") {
       startQrAuth();
@@ -561,151 +600,141 @@ export default function AccountsPage() {
               </CardContent>
             </Card>
           ) : (
-            accounts.map((account) => (
-              <Card key={account.id} className="bg-[#1a1a1a] border-white/10">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <CardTitle className="text-base">
-                        {account.display_name || account.phone}
-                      </CardTitle>
-                      {account.proxy_host && (
-                        <Badge className="bg-purple-600/20 text-purple-400 text-xs">
-                          Proxy
+            accounts.map((account) => {
+              const botState = getBotState(account.id);
+              const isExpanded = expandedBotSettings.has(account.id);
+              return (
+                <Card key={account.id} className="bg-[#1a1a1a] border-white/10">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base">
+                          {account.display_name || account.phone}
+                        </CardTitle>
+                        {account.proxy_host && (
+                          <Badge className="bg-purple-600/20 text-purple-400 text-xs">
+                            Proxy
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={account.is_active ? "default" : "secondary"}
+                          className={
+                            account.is_active
+                              ? "bg-green-600/20 text-green-400"
+                              : ""
+                          }
+                        >
+                          {account.is_active ? "Active" : "Disconnected"}
                         </Badge>
+                        {account.is_active && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={`text-xs ${isExpanded ? "text-blue-400" : "text-muted-foreground hover:text-white"}`}
+                              onClick={() => toggleBotSettings(account.id)}
+                            >
+                              Bot Settings
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-muted-foreground hover:text-white"
+                              onClick={() => openProxyDialog(account)}
+                            >
+                              Set Proxy
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-400 hover:text-red-300"
+                              onClick={() => handleDisconnect(account.id)}
+                            >
+                              Disconnect
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-sm text-muted-foreground space-y-1">
+                      <div>Phone: {account.phone}</div>
+                      {account.username && <div>@{account.username}</div>}
+                      {account.proxy_host && (
+                        <div>
+                          Proxy: {account.proxy_host}:{account.proxy_port}
+                          {account.proxy_username && ` (${account.proxy_username})`}
+                        </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant={account.is_active ? "default" : "secondary"}
-                        className={
-                          account.is_active
-                            ? "bg-green-600/20 text-green-400"
-                            : ""
-                        }
-                      >
-                        {account.is_active ? "Active" : "Disconnected"}
-                      </Badge>
-                      {account.is_active && (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-muted-foreground hover:text-white"
-                            onClick={() => openProxyDialog(account)}
-                          >
-                            Set Proxy
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-400 hover:text-red-300"
-                            onClick={() => handleDisconnect(account.id)}
-                          >
-                            Disconnect
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-sm text-muted-foreground space-y-1">
-                    <div>Phone: {account.phone}</div>
-                    {account.username && <div>@{account.username}</div>}
-                    {account.proxy_host && (
-                      <div>
-                        Proxy: {account.proxy_host}:{account.proxy_port}
-                        {account.proxy_username && ` (${account.proxy_username})`}
+
+                    {/* Per-account bot settings (collapsible) */}
+                    {isExpanded && (
+                      <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+                        <p className="text-xs font-semibold text-white/60 uppercase tracking-wide">
+                          Bot for Locked Media
+                        </p>
+
+                        {botState.hasBotToken && botState.botTokenPreview && (
+                          <div className="flex items-center gap-2 text-sm text-green-400 bg-green-400/10 px-3 py-2 rounded-lg">
+                            <span>Bot connected: {botState.botTokenPreview}</span>
+                          </div>
+                        )}
+
+                        {botState.error && (
+                          <div className="text-sm text-red-400 bg-red-400/10 p-2 rounded">
+                            {botState.error}
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <Label className="text-xs">
+                            Bot Token <span className="text-white/40">(from @BotFather) — each account needs its own bot</span>
+                          </Label>
+                          <Input
+                            type="password"
+                            placeholder={botState.hasBotToken ? "Enter new token to replace existing" : "e.g. 8123456789:AAFxxx..."}
+                            value={botState.botToken}
+                            onChange={(e) => updateBotState(account.id, { botToken: e.target.value })}
+                            className="bg-[#0f0f0f] border-white/10"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs">
+                            Business Connection ID <span className="text-white/40">(optional)</span>
+                          </Label>
+                          <Input
+                            placeholder="Sent by your bot when you add it as a Business Bot"
+                            value={botState.businessConnectionId}
+                            onChange={(e) => updateBotState(account.id, { businessConnectionId: e.target.value })}
+                            className="bg-[#0f0f0f] border-white/10"
+                          />
+                        </div>
+
+                        <p className="text-xs text-muted-foreground">
+                          Stars earned go to this bot&apos;s wallet. Withdraw via BotFather &rarr; Monetization &rarr; Withdraw.
+                        </p>
+
+                        <Button
+                          size="sm"
+                          className="bg-blue-600 hover:bg-blue-700"
+                          onClick={() => handleSaveBotToken(account.id)}
+                          disabled={botState.saving || (!botState.botToken && !botState.businessConnectionId)}
+                        >
+                          {botState.saving ? "Saving..." : "Save Bot Settings"}
+                        </Button>
                       </div>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                  </CardContent>
+                </Card>
+              );
+            })
           )}
         </div>
-      </div>
-
-      {/* Bot Token Section */}
-      <div className="max-w-4xl mx-auto px-6 pb-6">
-        <Card className="bg-[#1a1a1a] border-white/10">
-          <CardHeader>
-            <CardTitle className="text-base">🔒 Set Up Locked Media (Your Own Bot)</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              To send Stars-gated locked photos and videos, each account needs its own Telegram bot. Stars paid by fans go directly into <strong>your bot&apos;s wallet</strong> — you cash them out anytime via BotFather → Monetization → Withdraw.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Step-by-step instructions */}
-            <div className="bg-[#0f0f0f] border border-white/10 rounded-lg p-4 space-y-3">
-              <p className="text-xs font-semibold text-white/60 uppercase tracking-wide">How to set up your bot</p>
-              <ol className="space-y-2 text-sm text-white/80">
-                <li className="flex gap-2">
-                  <span className="text-blue-400 font-bold shrink-0">1.</span>
-                  <span>Open Telegram and message <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-blue-400 underline">@BotFather</a></span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-blue-400 font-bold shrink-0">2.</span>
-                  <span>Send <code className="bg-white/10 px-1 rounded">/newbot</code> — choose any name and username</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-blue-400 font-bold shrink-0">3.</span>
-                  <span>Copy the bot token BotFather gives you and paste it below</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-blue-400 font-bold shrink-0">4.</span>
-                  <span>In BotFather: <code className="bg-white/10 px-1 rounded">/mybots</code> → your bot → Bot Settings → <strong>Allow Business Connections</strong> → Enable</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-blue-400 font-bold shrink-0">5.</span>
-                  <span><em>(Requires Telegram Premium)</em> Go to Telegram Settings → Telegram Business → Chatbots → add your bot. It will DM you your Business Connection ID.</span>
-                </li>
-              </ol>
-            </div>
-
-            {hasBotToken && botTokenPreview && (
-              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-400/10 px-3 py-2 rounded-lg">
-                <span>✅</span>
-                <span>Bot connected: {botTokenPreview}</span>
-              </div>
-            )}
-            {botError && (
-              <div className="text-sm text-red-400 bg-red-400/10 p-2 rounded">
-                {botError}
-              </div>
-            )}
-            <div className="space-y-1">
-              <Label className="text-xs">Bot Token <span className="text-white/40">(from @BotFather)</span></Label>
-              <Input
-                type="password"
-                placeholder={hasBotToken ? "Enter new token to replace existing" : "e.g. 8123456789:AAFxxx..."}
-                value={botToken}
-                onChange={(e) => setBotToken(e.target.value)}
-                className="bg-[#0f0f0f] border-white/10"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Business Connection ID <span className="text-white/40">(optional — needed for Personal Chat injection)</span></Label>
-              <Input
-                placeholder="Sent to you by your bot when you add it as a Business Bot"
-                value={businessConnectionId}
-                onChange={(e) => setBusinessConnectionId(e.target.value)}
-                className="bg-[#0f0f0f] border-white/10"
-              />
-              <p className="text-xs text-muted-foreground">
-                Only needed if you want to send locked media directly inside your personal Telegram chats. Requires Telegram Premium.
-              </p>
-            </div>
-            <Button
-              className="bg-blue-600 hover:bg-blue-700"
-              onClick={handleSaveBotToken}
-              disabled={botSaving || (!botToken && !businessConnectionId)}
-            >
-              {botSaving ? "Saving..." : "Save Bot Settings"}
-            </Button>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Proxy Dialog */}

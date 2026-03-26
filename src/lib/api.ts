@@ -156,11 +156,12 @@ export const messagesApi = {
     }),
 };
 
-// Bot token
+// Bot token (per-account)
 export const botTokenApi = {
-  get: () => request("/accounts/bot-token"),
-  update: (data: { bot_token?: string; business_connection_id?: string }) =>
-    request("/accounts/bot-token", {
+  get: (accountId?: number) =>
+    request(accountId ? `/accounts/${accountId}/bot-token` : "/accounts/bot-token"),
+  update: (data: { bot_token?: string; business_connection_id?: string }, accountId?: number) =>
+    request(accountId ? `/accounts/${accountId}/bot-token` : "/accounts/bot-token", {
       method: "PATCH",
       body: JSON.stringify(data),
     }),

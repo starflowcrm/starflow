@@ -220,6 +220,11 @@ export default function InboxPage() {
                     Chatters
                   </Button>
                 </Link>
+                <Link href="/billing">
+                  <Button variant="ghost" size="sm" className="text-xs h-8">
+                    Billing
+                  </Button>
+                </Link>
               </>
             )}
           </nav>

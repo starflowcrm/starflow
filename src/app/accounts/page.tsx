@@ -39,7 +39,9 @@ export default function AccountsPage() {
   // QR auth state
   const [qrUrl, setQrUrl] = useState("");
   const [qrAuthToken, setQrAuthToken] = useState("");
-  const [qrStatus, setQrStatus] = useState<"idle" | "loading" | "pending" | "success" | "expired">("idle");
+  const [qrStatus, setQrStatus] = useState<"idle" | "loading" | "pending" | "success" | "expired" | "needs_password">("idle");
+  const [twoFaPassword, setTwoFaPassword] = useState("");
+  const [twoFaSubmitting, setTwoFaSubmitting] = useState(false);
   const qrRefreshTimer = useRef<NodeJS.Timeout | null>(null);
   const qrPollTimer = useRef<NodeJS.Timeout | null>(null);
 
@@ -124,6 +126,13 @@ export default function AccountsPage() {
               setDialogOpen(false);
               resetDialog();
             }, 1000);
+          } else if (status.status === "needs_password") {
+            setQrStatus("needs_password");
+            clearQrTimers();
+          } else if (status.status === "error") {
+            setError(status.error || "QR auth failed");
+            setQrStatus("expired");
+            clearQrTimers();
           } else if (status.status === "expired") {
             setQrStatus("expired");
             clearQrTimers();
@@ -219,6 +228,8 @@ export default function AccountsPage() {
     setQrUrl("");
     setQrAuthToken("");
     setQrStatus("idle");
+    setTwoFaPassword("");
+    setTwoFaSubmitting(false);
     clearQrTimers();
   };
 
@@ -252,6 +263,11 @@ export default function AccountsPage() {
             <Link href="/chatters">
               <Button variant="ghost" size="sm">
                 Chatters
+              </Button>
+            </Link>
+            <Link href="/billing">
+              <Button variant="ghost" size="sm">
+                Billing
               </Button>
             </Link>
           </nav>
@@ -351,6 +367,62 @@ export default function AccountsPage() {
                       </div>
                       <p className="text-green-400 font-medium">Connected!</p>
                     </div>
+                  )}
+                  {qrStatus === "needs_password" && (
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        setTwoFaSubmitting(true);
+                        setError("");
+                        try {
+                          const result = await accountsApi.submitQrPassword(qrAuthToken, twoFaPassword);
+                          if (result.status === "success" && result.account) {
+                            setQrStatus("success");
+                            setAccounts((prev) => {
+                              if (prev.some((a: Account) => a.id === result.account.id)) return prev;
+                              return [...prev, result.account];
+                            });
+                            setTimeout(() => {
+                              setDialogOpen(false);
+                              resetDialog();
+                            }, 1000);
+                          } else {
+                            setError(result.error || "Invalid password");
+                          }
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "Failed to submit password");
+                        } finally {
+                          setTwoFaSubmitting(false);
+                        }
+                      }}
+                      className="flex flex-col items-center gap-4 py-2 w-full"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                        <svg className="w-6 h-6 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                      </div>
+                      <p className="text-sm text-muted-foreground text-center">
+                        This account has two-factor authentication enabled. Enter your Telegram 2FA password.
+                      </p>
+                      <div className="w-full space-y-2">
+                        <Input
+                          type="password"
+                          placeholder="2FA Password"
+                          value={twoFaPassword}
+                          onChange={(e) => setTwoFaPassword(e.target.value)}
+                          required
+                          className="bg-[#0f0f0f] border-white/10"
+                        />
+                      </div>
+                      <Button
+                        type="submit"
+                        className="w-full bg-blue-600 hover:bg-blue-700"
+                        disabled={twoFaSubmitting}
+                      >
+                        {twoFaSubmitting ? "Verifying..." : "Submit Password"}
+                      </Button>
+                    </form>
                   )}
                   {qrStatus === "expired" && (
                     <div className="w-48 h-48 flex flex-col items-center justify-center gap-3">

@@ -176,6 +176,11 @@ export default function ChattersPage() {
                 Chatters
               </Button>
             </Link>
+            <Link href="/billing">
+              <Button variant="ghost" size="sm">
+                Billing
+              </Button>
+            </Link>
           </nav>
         </div>
         <Button

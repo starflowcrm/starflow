@@ -96,6 +96,11 @@ export const accountsApi = {
     request("/accounts/start-qr-auth", { method: "POST" }),
   qrStatus: (auth_token: string) =>
     request(`/accounts/qr-status/${auth_token}`),
+  submitQrPassword: (auth_token: string, password: string) =>
+    request("/accounts/qr-password", {
+      method: "POST",
+      body: JSON.stringify({ auth_token, password }),
+    }),
   // Proxy
   updateProxy: (
     id: number,
@@ -197,6 +202,20 @@ export const vaultApi = {
   },
   delete: (id: number) =>
     request(`/vault/${id}`, { method: "DELETE" }),
+};
+
+// Billing
+export const billingApi = {
+  status: () => request("/billing/status"),
+  createSubscription: () =>
+    request("/billing/create-subscription", { method: "POST" }),
+  topup: (amount: number) =>
+    request("/billing/topup", {
+      method: "POST",
+      body: JSON.stringify({ amount }),
+    }),
+  updateSubscription: () =>
+    request("/billing/update-subscription", { method: "POST" }),
 };
 
 // Bot token (per-account)

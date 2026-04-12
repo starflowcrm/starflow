@@ -12,6 +12,7 @@ export function ReplyBox({
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -23,9 +24,12 @@ export function ReplyBox({
     if (!msg || sending) return;
 
     setSending(true);
+    setError(null);
     try {
       await onSend(msg);
       setText("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to send message");
     } finally {
       setSending(false);
       setTimeout(() => inputRef.current?.focus(), 0);
@@ -40,7 +44,11 @@ export function ReplyBox({
   };
 
   return (
-    <div className="flex items-center gap-2 p-3 bg-transparent">
+    <div className="flex flex-col gap-1 p-3 bg-transparent">
+      {error && (
+        <div className="text-xs text-red-400 px-1">{error}</div>
+      )}
+      <div className="flex items-center gap-2">
       <input
         ref={inputRef}
         type="text"
@@ -58,6 +66,7 @@ export function ReplyBox({
       >
         {sending ? "..." : "Send"}
       </Button>
+      </div>
     </div>
   );
 }

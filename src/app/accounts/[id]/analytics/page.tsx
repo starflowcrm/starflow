@@ -22,17 +22,17 @@ export default function AccountAnalyticsPage() {
   }, [router, accountId]);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white">
-      <div className="border-b border-white/[0.06] bg-[#0e0e0e] px-6 py-4 flex items-center gap-4">
-        <Link href={`/accounts/${accountId}`} className="text-white/50 hover:text-white text-sm">&larr; Account Dashboard</Link>
-        <h1 className="text-lg font-semibold">Analytics</h1>
-        {accountName && <span className="text-sm text-white/40">{accountName}</span>}
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-indigo-50 to-slate-100 dark:from-slate-950 dark:via-indigo-950 dark:to-slate-950">
+      <div className="bg-white/70 dark:bg-white/5 backdrop-blur-xl border-b border-slate-200/70 dark:border-white/10 px-6 py-4 flex items-center gap-4 shadow-sm dark:shadow-none">
+        <Link href={`/accounts/${accountId}`} className="text-slate-400 dark:text-white/50 hover:text-slate-600 dark:hover:text-white text-sm transition-colors">&larr; Account Dashboard</Link>
+        <h1 className="text-lg font-semibold text-slate-900 dark:text-white">Analytics</h1>
+        {accountName && <span className="text-sm text-slate-400 dark:text-white/40">{accountName}</span>}
       </div>
 
       <div className="max-w-2xl mx-auto px-6 py-16 text-center">
         <div className="text-5xl mb-4 opacity-30">📊</div>
-        <h2 className="text-xl font-semibold mb-2">Analytics Coming Soon</h2>
-        <p className="text-sm text-white/40">
+        <h2 className="text-xl font-semibold mb-2 text-slate-900 dark:text-white">Analytics Coming Soon</h2>
+        <p className="text-sm text-slate-400 dark:text-white/40">
           Track message volume, revenue from locked media, and engagement metrics.
         </p>
       </div>

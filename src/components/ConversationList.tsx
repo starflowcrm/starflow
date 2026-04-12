@@ -55,7 +55,7 @@ function formatTime(dateStr: string | null) {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-/* ── Account Switcher ── */
+/* Account Switcher */
 export function AccountSwitcher({
   accounts,
   selectedAccountId,
@@ -69,7 +69,7 @@ export function AccountSwitcher({
 }) {
   if (accounts.length === 0) {
     return (
-      <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+      <div className="px-3 py-4 text-center text-xs text-slate-400 dark:text-white/40">
         No accounts connected
       </div>
     );
@@ -90,45 +90,41 @@ export function AccountSwitcher({
             onClick={() => onSelect(acc.id)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
               isActive
-                ? "bg-white/10"
-                : "hover:bg-white/5"
+                ? "bg-black/5 dark:bg-white/10"
+                : "hover:bg-black/[0.03] dark:hover:bg-white/5"
             }`}
           >
-            {/* Avatar */}
             <div
               className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 relative"
               style={{ backgroundColor: color }}
             >
               {initials}
               {isActive && (
-                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-[#0a0a0a] rounded-full" />
+                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white dark:border-slate-950 rounded-full" />
               )}
             </div>
 
-            {/* Name + phone */}
             <div className="min-w-0 flex-1 text-left">
-              <div className={`text-sm font-medium truncate ${isActive ? "text-white" : "text-white/70"}`}>
+              <div className={`text-sm font-medium truncate ${isActive ? "text-slate-900 dark:text-white" : "text-slate-600 dark:text-white/70"}`}>
                 {acc.display_name || acc.phone}
               </div>
-              {acc.display_name && (
-                <div className="text-[11px] text-muted-foreground truncate">
-                  {acc.phone}
+              {(acc.username || acc.phone) && (
+                <div className="text-[11px] text-slate-400 dark:text-white/40 truncate">
+                  {acc.username ? `@${acc.username}` : acc.phone}
                 </div>
               )}
             </div>
 
-            {/* Unread badge */}
             {unread > 0 && (
-              <span className="bg-blue-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center flex-shrink-0">
+              <span className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center flex-shrink-0">
                 {unread}
               </span>
             )}
 
-            {/* Settings link */}
             <Link
               href={`/accounts/${acc.id}`}
               onClick={(e) => e.stopPropagation()}
-              className="text-white/30 hover:text-white/70 flex-shrink-0 text-sm"
+              className="text-slate-300 dark:text-white/30 hover:text-slate-500 dark:hover:text-white/70 flex-shrink-0 text-sm"
               title="Account settings"
             >
               &#9881;&#65039;
@@ -140,7 +136,7 @@ export function AccountSwitcher({
   );
 }
 
-/* ── Conversation List (filtered by account) ── */
+/* Conversation List */
 export function ConversationList({
   conversations,
   selectedId,
@@ -154,7 +150,7 @@ export function ConversationList({
     <ScrollArea className="h-full">
       <div className="space-y-0.5 p-2">
         {conversations.length === 0 && (
-          <div className="text-center text-muted-foreground py-8 text-sm">
+          <div className="text-center text-slate-400 dark:text-white/40 py-8 text-sm">
             No conversations yet
           </div>
         )}
@@ -166,39 +162,37 @@ export function ConversationList({
             <button
               key={conv.id}
               onClick={() => onSelect(conv)}
-              className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors ${
+              className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${
                 isSelected
-                  ? "bg-blue-600/20"
-                  : "hover:bg-white/5"
+                  ? "bg-blue-500/10 dark:bg-blue-600/20 border border-blue-500/20 dark:border-blue-500/20"
+                  : "hover:bg-black/[0.03] dark:hover:bg-white/5 border border-transparent"
               }`}
             >
-              {/* Contact avatar */}
-              <div className="w-10 h-10 rounded-full bg-[#2a2a2a] flex items-center justify-center text-white/60 text-sm font-medium flex-shrink-0">
+              <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 dark:text-white/60 text-sm font-medium flex-shrink-0">
                 {initials}
               </div>
 
-              {/* Name + last message preview */}
               <div className="min-w-0 flex-1 text-left">
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`text-sm font-medium truncate ${isSelected ? "text-white" : "text-white/90"}`}>
+                  <span className={`text-sm font-medium truncate ${isSelected ? "text-slate-900 dark:text-white" : "text-slate-700 dark:text-white/90"}`}>
                     {conv.peer_name || "Unknown"}
                   </span>
-                  <span className="text-[11px] text-muted-foreground flex-shrink-0">
+                  <span className="text-[11px] text-slate-400 dark:text-white/40 flex-shrink-0">
                     {formatTime(conv.last_message_at)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-2 mt-0.5">
                   {conv.peer_username ? (
-                    <span className="text-xs text-muted-foreground truncate">
+                    <span className="text-xs text-slate-400 dark:text-white/40 truncate">
                       @{conv.peer_username}
                     </span>
                   ) : (
-                    <span className="text-xs text-muted-foreground truncate">
+                    <span className="text-xs text-slate-400 dark:text-white/40 truncate">
                       &nbsp;
                     </span>
                   )}
                   {conv.unread_count > 0 && (
-                    <span className="bg-blue-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center flex-shrink-0">
+                    <span className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center flex-shrink-0">
                       {conv.unread_count}
                     </span>
                   )}

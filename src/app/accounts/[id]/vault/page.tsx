@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import { useTheme } from "next-themes";
+import { Moon, Sun, FolderPlus, FolderTree, Folder, GripVertical, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
 import { getAuthData, clearAuth } from "@/lib/api";
 
 interface VaultItem {
@@ -16,7 +17,18 @@ interface VaultItem {
   file_id: string;
   default_star_price: number;
   created_at: string;
+  folder_id?: number | null;
 }
+
+interface VaultFolder {
+  id: number;
+  name: string;
+  parent_id?: number | null;
+  sort_order?: number;
+  created_at?: string | null;
+}
+
+type DropPosition = "before" | "inside" | "after";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -31,152 +43,643 @@ function authFetch(path: string, opts: RequestInit = {}) {
   });
 }
 
+function sortFolders(folders: VaultFolder[]) {
+  return [...folders].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name));
+}
+
+function buildFolderOptions(folders: VaultFolder[], parentId: number | null = null, depth = 0): { id: number; label: string }[] {
+  return sortFolders(folders)
+    .filter((folder) => (folder.parent_id ?? null) === parentId)
+    .flatMap((folder) => [
+      { id: folder.id, label: `${"— ".repeat(depth)}${folder.name}` },
+      ...buildFolderOptions(folders, folder.id, depth + 1),
+    ]);
+}
+
+function isDescendant(folders: VaultFolder[], folderId: number, possibleAncestorId: number) {
+  let current = folders.find((folder) => folder.id === folderId);
+  while (current?.parent_id != null) {
+    if (current.parent_id === possibleAncestorId) return true;
+    current = folders.find((folder) => folder.id === current?.parent_id);
+  }
+  return false;
+}
+
+function computeDropPosition(ratio: number): DropPosition {
+  if (ratio < 0.25) return "before";
+  if (ratio > 0.75) return "after";
+  return "inside";
+}
+
+function moveFolderInTree(
+  folders: VaultFolder[],
+  draggedId: number,
+  targetFolderId: number,
+  position: DropPosition,
+): VaultFolder[] {
+  const next = folders.map((folder) => ({ ...folder }));
+  const dragged = next.find((folder) => folder.id === draggedId);
+  const target = next.find((folder) => folder.id === targetFolderId);
+  if (!dragged || !target || dragged.id === target.id) return folders;
+
+  if (position === "inside") {
+    if (isDescendant(next, target.id, dragged.id)) return folders;
+
+    if (dragged.parent_id === target.id) {
+      dragged.parent_id = target.parent_id ?? null;
+    } else {
+      dragged.parent_id = target.id;
+    }
+  } else {
+    if (target.parent_id != null && isDescendant(next, target.parent_id, dragged.id)) return folders;
+    dragged.parent_id = target.parent_id ?? null;
+  }
+
+  const touchedParentIds = Array.from(new Set<number | null>([
+    dragged.parent_id ?? null,
+    target.parent_id ?? null,
+  ]));
+
+  for (const parentId of touchedParentIds) {
+    const siblings = sortFolders(next).filter((folder) => (folder.parent_id ?? null) === parentId && folder.id !== dragged.id);
+    const insertIndex = (() => {
+      if ((dragged.parent_id ?? null) !== parentId) return -1;
+      const targetIndex = siblings.findIndex((folder) => folder.id === target.id);
+      if (position === "inside") return siblings.length;
+      if (targetIndex === -1) return siblings.length;
+      return position === "before" ? targetIndex : targetIndex + 1;
+    })();
+
+    if (insertIndex >= 0) siblings.splice(insertIndex, 0, dragged);
+
+    siblings.forEach((folder, index) => {
+      const match = next.find((candidate) => candidate.id === folder.id);
+      if (match) {
+        match.parent_id = parentId;
+        match.sort_order = index;
+      }
+    });
+  }
+
+  return next;
+}
+
+// Folders are stored flat (each has a parent_id), so these helpers are pass-throughs.
+// moveFolderInTree already assigns correct sort_order values per parent group.
+function normalizeFolderTree(folders: VaultFolder[]): VaultFolder[] {
+  return folders;
+}
+
+function flattenFolderTree(folders: VaultFolder[]): VaultFolder[] {
+  return folders;
+}
+
+function FolderRow({
+  folder,
+  depth,
+  activeFolderId,
+  draggingFolderId,
+  dropPreview,
+  onSelect,
+  onDelete,
+  onMove,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+}: {
+  folder: VaultFolder;
+  depth: number;
+  activeFolderId: number | null;
+  draggingFolderId: number | null;
+  dropPreview: { folderId: number | null; position: DropPosition | null };
+  onSelect: (id: number) => void;
+  onDelete: (id: number) => void;
+  onMove: (id: number, direction: "up" | "down") => void;
+  onDragStart: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
+  onDragOver: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
+  onDrop: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
+}) {
+  const isDragging = draggingFolderId === folder.id;
+  const isSubfolder = depth > 0;
+  const isPreviewBefore = dropPreview.folderId === folder.id && dropPreview.position === "before";
+  const isPreviewInside = dropPreview.folderId === folder.id && dropPreview.position === "inside";
+  const isPreviewAfter = dropPreview.folderId === folder.id && dropPreview.position === "after";
+
+  return (
+    <div
+      onDragOver={(e) => onDragOver(folder.id, e)}
+      onDrop={(e) => onDrop(folder.id, e)}
+      className={isSubfolder ? "ml-4 border-l border-white/10 pl-3" : ""}
+    >
+      <div className={`pointer-events-none transition-all duration-150 ${isPreviewBefore ? "mb-2 h-3 rounded-full bg-blue-400/80 shadow-[0_0_12px_rgba(96,165,250,0.55)]" : "mb-0 h-0"}`} />
+      <div
+        onDragOver={(e) => onDragOver(folder.id, e)}
+        onDrop={(e) => onDrop(folder.id, e)}
+        className={`group flex w-full items-center gap-2 rounded-md px-3 py-3 text-left text-sm transition-all duration-150 ${
+          activeFolderId === folder.id ? "bg-violet-600/30 text-white" : "text-gray-300 hover:bg-white/5"
+        } ${isDragging ? "opacity-50" : "opacity-100"} ${isSubfolder ? "bg-white/[0.03]" : ""} ${isPreviewInside ? "scale-[1.01] bg-blue-500/15 ring-1 ring-blue-400/70 shadow-[0_0_20px_rgba(96,165,250,0.18)]" : ""}`}
+      >
+        <button
+          type="button"
+          draggable
+          onDragStart={(e) => onDragStart(folder.id, e)}
+          onDragEnd={onDragEnd}
+          onClick={(e) => e.preventDefault()}
+          className="cursor-grab active:cursor-grabbing"
+          aria-label={`Drag to reorder ${folder.name}`}
+        >
+          <GripVertical className="h-4 w-4 shrink-0 text-gray-500" />
+        </button>
+        <button type="button" onClick={() => onSelect(folder.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <Folder className={`h-4 w-4 shrink-0 ${isSubfolder ? "text-violet-300" : ""}`} />
+          <span className="truncate">{folder.name}</span>
+          {isSubfolder ? <span className="rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-violet-200">subfolder</span> : null}
+        </button>
+        <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+          <button type="button" onClick={() => onMove(folder.id, "up")} className="text-gray-400 hover:text-white" aria-label={`Move ${folder.name} up`}>
+            ↑
+          </button>
+          <button type="button" onClick={() => onMove(folder.id, "down")} className="text-gray-400 hover:text-white" aria-label={`Move ${folder.name} down`}>
+            ↓
+          </button>
+          <button type="button" onClick={() => onDelete(folder.id)} className="text-red-400 opacity-70 hover:text-red-300 group-hover:opacity-100">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+      <div className={`pointer-events-none transition-all duration-150 ${isPreviewAfter ? "mt-2 h-3 rounded-full bg-blue-400/80 shadow-[0_0_12px_rgba(96,165,250,0.55)]" : "mt-0 h-0"}`} />
+    </div>
+  );
+}
+
+function FolderTreeView({
+  folders,
+  parentId,
+  depth,
+  activeFolderId,
+  draggingFolderId,
+  dropPreview,
+  onSelect,
+  onDelete,
+  onMove,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+}: {
+  folders: VaultFolder[];
+  parentId: number | null;
+  depth: number;
+  activeFolderId: number | null;
+  draggingFolderId: number | null;
+  dropPreview: { folderId: number | null; position: DropPosition | null };
+  onSelect: (id: number) => void;
+  onDelete: (id: number) => void;
+  onMove: (id: number, direction: "up" | "down") => void;
+  onDragStart: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
+  onDragOver: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
+  onDrop: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
+}) {
+  const children = sortFolders(folders).filter((folder) => (folder.parent_id ?? null) === parentId);
+  if (!children.length) return null;
+
+  return (
+    <div className="space-y-2">
+      {children.map((folder) => (
+        <div key={folder.id}>
+          <FolderRow
+            folder={folder}
+            depth={depth}
+            activeFolderId={activeFolderId}
+            draggingFolderId={draggingFolderId}
+            dropPreview={dropPreview}
+            onSelect={onSelect}
+            onDelete={onDelete}
+            onMove={onMove}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          />
+          <FolderTreeView
+            folders={folders}
+            parentId={folder.id}
+            depth={depth + 1}
+            activeFolderId={activeFolderId}
+            draggingFolderId={draggingFolderId}
+            dropPreview={dropPreview}
+            onSelect={onSelect}
+            onDelete={onDelete}
+            onMove={onMove}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AccountVaultPage() {
   const router = useRouter();
   const params = useParams();
   const accountId = Number(params.id);
+  const { theme, setTheme } = useTheme();
+  const dragFrame = useRef<number | null>(null);
+  const [mounted, setMounted] = useState(false);
   const [items, setItems] = useState<VaultItem[]>([]);
+  const [folders, setFolders] = useState<VaultFolder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
-  const [uploadError, setUploadError] = useState("");
-
-  const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("100");
+  const [selectedFolderId, setSelectedFolderId] = useState<string>("");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderParentId, setNewFolderParentId] = useState<string>("");
+  const [activeFolderFilter, setActiveFolderFilter] = useState<number | null>(null);
+  const [draggingFolderId, setDraggingFolderId] = useState<number | null>(null);
+  const [dropPreview, setDropPreview] = useState<{ folderId: number | null; position: DropPosition | null }>({ folderId: null, position: null });
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const auth = getAuthData();
-    if (!auth?.token) { router.replace("/login"); return; }
-    loadItems();
-  }, [router, accountId]);
+    setMounted(true);
+    if (!getAuthData()?.token) router.replace("/login");
+  }, [router]);
 
-  async function loadItems() {
-    setLoading(true);
+
+  async function loadVault() {
     try {
-      const r = await authFetch(`/vault/?account_id=${accountId}`);
-      if (r.status === 401) { clearAuth(); router.replace("/login"); return; }
-      setItems(await r.json());
-    } catch { setError("Failed to load vault"); }
-    finally { setLoading(false); }
+      setLoading(true);
+      setError("");
+      const params = new URLSearchParams();
+      params.set("account_id", String(accountId));
+      if (activeFolderFilter) params.set("folder_id", String(activeFolderFilter));
+      const res = await authFetch(`/vault/?${params.toString()}`);
+      if (res.status === 401) {
+        clearAuth();
+        router.replace("/login");
+        return;
+      }
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setItems(data.items || []);
+      setFolders(data.folders || []);
+    } catch {
+      setError("Failed to load vault");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (mounted && accountId) loadVault();
+  }, [mounted, accountId, activeFolderFilter]);
+
+  const folderOptions = useMemo(() => buildFolderOptions(folders), [folders]);
+
+  async function syncFolderOrder(nextFolders: VaultFolder[]) {
+    const changedFolders = flattenFolderTree(nextFolders);
+    for (const folder of changedFolders) {
+      const form = new FormData();
+      // Only send parent_id when non-null; omitting it lets the backend keep it as NULL (top level).
+      if (folder.parent_id != null) form.append("parent_id", String(folder.parent_id));
+      form.append("sort_order", String(folder.sort_order ?? 0));
+      const res = await authFetch(`/vault/folders/${folder.id}`, { method: "PATCH", body: form });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || "Failed to reorder folder");
+      }
+    }
+  }
+
+  function handleDragStart(folderId: number, e: React.DragEvent<HTMLElement>) {
+    setDraggingFolderId(folderId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(folderId));
+  }
+
+  function handleDragEnd() {
+    setDraggingFolderId(null);
+    setDropPreview({ folderId: null, position: null });
+    if (dragFrame.current) {
+      cancelAnimationFrame(dragFrame.current);
+      dragFrame.current = null;
+    }
+  }
+
+  function handleDragOver(folderId: number, e: React.DragEvent<HTMLElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedId = Number(e.dataTransfer.getData("text/plain") || draggingFolderId);
+    if (!draggedId || draggedId === folderId) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientY - rect.top) / rect.height;
+    const position = computeDropPosition(ratio);
+
+    if (dragFrame.current) cancelAnimationFrame(dragFrame.current);
+    dragFrame.current = requestAnimationFrame(() => {
+      setDropPreview((prev) => {
+        if (prev.folderId === folderId && prev.position === position) return prev;
+        return { folderId: folderId, position };
+      });
+    });
+  }
+
+  async function handleDrop(targetFolderId: number, e: React.DragEvent<HTMLElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const dataStr = e.dataTransfer.getData("text/plain");
+    const draggedId = Number(dataStr || draggingFolderId);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientY - rect.top) / rect.height;
+    const position: DropPosition = computeDropPosition(ratio);
+    handleDragEnd();
+
+    void dataStr;
+    if (!draggedId || !position || draggedId === targetFolderId) return;
+
+    const movedFolders = moveFolderInTree(folders, draggedId, targetFolderId, position);
+    if (movedFolders === folders) return;
+
+    const nextFolders = normalizeFolderTree(movedFolders);
+    const previousFolders = folders;
+    setFolders(nextFolders);
+    try {
+      await syncFolderOrder(nextFolders);
+      await loadVault();
+    } catch (err) {
+      setFolders(previousFolders);
+      setError(err instanceof Error ? err.message : "Failed to reorder folder");
+    }
   }
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
+    const file = fileRef.current?.files?.[0];
     if (!file) return;
-    setUploading(true);
-    setUploadError("");
+
+    const mediaType = file.type.startsWith("video") ? "video" : "photo";
+    const form = new FormData();
+    form.append("file", file);
+    form.append("name", name || file.name);
+    form.append("default_star_price", price || "100");
+    form.append("media_type", mediaType);
+    form.append("account_id", String(accountId));
+    if (selectedFolderId) form.append("folder_id", selectedFolderId);
+
     try {
-      const mediaType = file.type.startsWith("video/") ? "video" : "photo";
-      const form = new FormData();
-      form.append("file", file);
-      form.append("name", name || file.name);
-      form.append("media_type", mediaType);
-      form.append("default_star_price", price);
-      form.append("account_id", String(accountId));
-
-      const r = await authFetch("/vault/", { method: "POST", body: form });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || "Upload failed");
-
-      setItems(prev => [data, ...prev]);
-      setFile(null); setName(""); setPrice("100");
+      const res = await authFetch("/vault/", { method: "POST", body: form });
+      if (!res.ok) throw new Error(await res.text());
+      setName("");
+      setPrice("100");
+      setSelectedFolderId("");
       if (fileRef.current) fileRef.current.value = "";
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
-    } finally { setUploading(false); }
+      await loadVault();
+    } catch {
+      setError("Upload failed");
+    }
   }
 
-  async function handleDelete(id: number) {
+  async function handleCreateFolder(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newFolderName.trim()) return;
+
+    const form = new FormData();
+    form.append("name", newFolderName.trim());
+    form.append("account_id", String(accountId));
+    if (newFolderParentId) form.append("parent_id", newFolderParentId);
+
+    try {
+      const res = await authFetch("/vault/folders", { method: "POST", body: form });
+      if (!res.ok) throw new Error(await res.text());
+      setNewFolderName("");
+      setNewFolderParentId("");
+      await loadVault();
+    } catch {
+      setError("Failed to create folder");
+    }
+  }
+
+  async function handleMoveFolder(folderId: number, direction: "up" | "down") {
+    const siblings = sortFolders(folders.filter((folder) => (folder.parent_id ?? null) === (folders.find((f) => f.id === folderId)?.parent_id ?? null)));
+    const currentIndex = siblings.findIndex((folder) => folder.id === folderId);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= siblings.length) return;
+
+    const reorderedSiblings = [...siblings];
+    const [moved] = reorderedSiblings.splice(currentIndex, 1);
+    reorderedSiblings.splice(targetIndex, 0, moved);
+    const siblingIds = new Set(reorderedSiblings.map((folder) => folder.id));
+
+    const nextFolders = folders.map((folder) => {
+      if (!siblingIds.has(folder.id)) return folder;
+      const newIndex = reorderedSiblings.findIndex((candidate) => candidate.id === folder.id);
+      return { ...folder, sort_order: newIndex };
+    });
+
+    const previousFolders = folders;
+    setFolders(nextFolders);
+    try {
+      await syncFolderOrder(nextFolders);
+      await loadVault();
+    } catch (err) {
+      setFolders(previousFolders);
+      setError(err instanceof Error ? err.message : "Failed to reorder folder");
+    }
+  }
+
+  async function handleDeleteFolder(folderId: number) {
+    if (!confirm("Delete this folder? Items inside it will be moved to No folder.")) return;
+    try {
+      const res = await authFetch(`/vault/folders/${folderId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || "Failed to delete folder");
+      }
+      if (activeFolderFilter === folderId) setActiveFolderFilter(null);
+      await loadVault();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete folder");
+    }
+  }
+
+  async function moveItem(itemId: number, folderId: string) {
+    const form = new FormData();
+    if (folderId) form.append("folder_id", folderId);
+    try {
+      const res = await authFetch(`/vault/${itemId}/move`, { method: "POST", body: form });
+      if (!res.ok) throw new Error(await res.text());
+      await loadVault();
+    } catch {
+      setError("Failed to move item");
+    }
+  }
+
+  async function deleteItem(id: number) {
     if (!confirm("Delete this item?")) return;
     try {
-      await authFetch(`/vault/${id}`, { method: "DELETE" });
-      setItems(prev => prev.filter(i => i.id !== id));
-    } catch { alert("Delete failed"); }
+      const res = await authFetch(`/vault/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      await loadVault();
+    } catch {
+      setError("Failed to delete item");
+    }
   }
 
+  if (!mounted) return null;
+
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white">
-      <div className="border-b border-white/[0.06] bg-[#0e0e0e] px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href={`/accounts/${accountId}`} className="text-white/50 hover:text-white text-sm">&larr; Account Dashboard</Link>
-          <h1 className="text-lg font-semibold">Content Vault</h1>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#1e1b4b,_#09090f_55%)] text-white">
+      <div className="border-b border-white/10 bg-white/5 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-4">
+            <Link href={`/accounts/${accountId}`} className="text-sm text-gray-300 hover:text-white">← Account Dashboard</Link>
+            <h1 className="text-xl font-semibold">Content Vault</h1>
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark") }>
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
         </div>
-        <Link href="/accounts">
-          <Button variant="ghost" size="sm" className="text-white/50">Accounts</Button>
-        </Link>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
-        <Card className="bg-[#111] border-white/[0.06]">
-          <CardContent className="pt-5">
-            <h2 className="text-sm font-semibold mb-4 text-white/80">Upload to Vault</h2>
-            <p className="text-xs text-white/40 mb-4">
-              Files are uploaded via Telethon (up to 2GB). Once uploaded, send to any chat instantly.
-            </p>
-            <form onSubmit={handleUpload} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
-              <div className="sm:col-span-2 space-y-1">
-                <Label className="text-xs text-white/50">File (photo or video)</Label>
-                <Input ref={fileRef} type="file" accept="image/*,video/*"
-                  onChange={e => { setFile(e.target.files?.[0] || null); if (!name) setName(e.target.files?.[0]?.name.replace(/\.[^.]+$/, "") || ""); }}
-                  className="bg-[#0a0a0a] border-white/10 text-sm" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-white/50">Name</Label>
-                <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Pool video"
-                  className="bg-[#0a0a0a] border-white/10 text-sm" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-white/50">Default star price</Label>
-                <Input type="number" min={1} value={price} onChange={e => setPrice(e.target.value)}
-                  className="bg-[#0a0a0a] border-white/10 text-sm" />
-              </div>
-              <div className="sm:col-span-4">
-                {uploadError && <p className="text-xs text-red-400 mb-2">{uploadError}</p>}
-                <Button type="submit" disabled={!file || uploading} className="bg-blue-600 hover:bg-blue-700 text-sm">
-                  {uploading ? "Uploading..." : "Upload to Vault"}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-
-        {error && <p className="text-red-400 text-sm">{error}</p>}
-        {loading ? (
-          <p className="text-white/40 text-sm">Loading vault...</p>
-        ) : items.length === 0 ? (
-          <div className="text-center py-16 text-white/30">
-            <div className="text-4xl mb-3">🔒</div>
-            <p className="text-sm">Vault is empty - upload your first item above</p>
-          </div>
-        ) : (
-          <div>
-            <h2 className="text-sm font-semibold mb-4 text-white/60">{items.length} item{items.length !== 1 ? "s" : ""}</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {items.map(item => (
-                <div key={item.id} className="bg-[#111] border border-white/[0.06] rounded-xl overflow-hidden group">
-                  <div className="aspect-square bg-[#0a0a0a] flex items-center justify-center text-4xl">
-                    {item.media_type === "video" ? "🎬" : "📷"}
-                  </div>
-                  <div className="p-3 space-y-1">
-                    <p className="text-xs font-medium truncate">{item.name}</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded uppercase tracking-wide">
-                        {item.media_type}
-                      </span>
-                      <span className="text-[10px] text-yellow-400">{item.default_star_price} star</span>
-                    </div>
-                    <button onClick={() => handleDelete(item.id)}
-                      className="text-[10px] text-red-400/60 hover:text-red-400 mt-1 w-full text-left">
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
+      <div className="mx-auto grid max-w-6xl gap-6 px-6 py-8 lg:grid-cols-[280px_1fr]">
+        <div className="space-y-6">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-gray-200">
+              <FolderTree className="h-4 w-4" />
+              Folders
             </div>
+            <button
+              type="button"
+              onClick={() => setActiveFolderFilter(null)}
+              className={`mb-2 w-full rounded-md px-3 py-2 text-left text-sm ${
+                activeFolderFilter === null ? "bg-violet-600/30" : "text-gray-300 hover:bg-white/5"
+              }`}
+            >
+              All items
+            </button>
+            <FolderTreeView
+              folders={folders}
+              parentId={null}
+              depth={0}
+              activeFolderId={activeFolderFilter}
+              draggingFolderId={draggingFolderId}
+              dropPreview={dropPreview}
+              onSelect={setActiveFolderFilter}
+              onDelete={handleDeleteFolder}
+              onMove={handleMoveFolder}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+            />
+            <p className="mt-3 text-xs text-gray-500">Drag to reorder or create subfolders. To remove a sub folder, drag it into its parent folder.</p>
           </div>
-        )}
+
+          <form onSubmit={handleCreateFolder} className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
+              <FolderPlus className="h-4 w-4" />
+              Add Folder
+            </div>
+            <div>
+              <Label>Folder name</Label>
+              <Input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="e.g. PPV / Holidays" />
+            </div>
+            <div>
+              <Label>Parent folder</Label>
+              <select
+                value={newFolderParentId}
+                onChange={(e) => setNewFolderParentId(e.target.value)}
+                className="mt-2 w-full rounded-md border border-white/10 bg-[#221f43] px-3 py-2 text-sm"
+              >
+                <option value="">Top level</option>
+                {folderOptions.map((folder) => (
+                  <option key={folder.id} value={folder.id}>{folder.label}</option>
+                ))}
+              </select>
+            </div>
+            <Button type="submit" className="w-full">Create Folder</Button>
+          </form>
+        </div>
+
+        <div className="space-y-6">
+          <form onSubmit={handleUpload} className="rounded-xl border border-white/10 bg-white/5 p-5">
+            <h2 className="mb-2 text-lg font-semibold">Upload to Vault</h2>
+            <p className="mb-4 text-sm text-gray-400">Files are uploaded via Telethon. Organize them into folders as you go.</p>
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="md:col-span-2">
+                <Label>File (photo or video)</Label>
+                <Input ref={fileRef} type="file" accept="image/*,video/*" className="mt-2" />
+              </div>
+              <div>
+                <Label>Name</Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Pool video" className="mt-2" />
+              </div>
+              <div>
+                <Label>Default star price</Label>
+                <Input value={price} onChange={(e) => setPrice(e.target.value)} type="number" className="mt-2" />
+              </div>
+            </div>
+            <div className="mt-4 max-w-sm">
+              <Label>Folder</Label>
+              <select
+                value={selectedFolderId}
+                onChange={(e) => setSelectedFolderId(e.target.value)}
+                className="mt-2 w-full rounded-md border border-white/10 bg-[#221f43] px-3 py-2 text-sm"
+              >
+                <option value="">No folder</option>
+                {folderOptions.map((folder) => (
+                  <option key={folder.id} value={folder.id}>{folder.label}</option>
+                ))}
+              </select>
+            </div>
+            <Button type="submit" className="mt-4">Upload to Vault</Button>
+          </form>
+
+          {error ? <div className="text-sm text-red-400">{error}</div> : null}
+
+          <div className="rounded-xl border border-white/10 bg-white/5 p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Vault Items</h2>
+              {loading ? <span className="text-sm text-gray-400">Loading...</span> : <span className="text-sm text-gray-400">{items.length} item(s)</span>}
+            </div>
+
+            {!loading && items.length === 0 ? (
+              <div className="py-16 text-center text-gray-400">Vault is empty, upload your first item above.</div>
+            ) : (
+              <div className="space-y-3">
+                {items.map((item) => (
+                  <div key={item.id} className="flex flex-col gap-3 rounded-lg border border-white/10 bg-black/10 p-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="font-medium">{item.name}</div>
+                      <div className="text-sm text-gray-400">{item.media_type} • {item.default_star_price} stars</div>
+                    </div>
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                      <select
+                        value={item.folder_id ?? ""}
+                        onChange={(e) => moveItem(item.id, e.target.value)}
+                        className="rounded-md border border-white/10 bg-[#221f43] px-3 py-2 text-sm"
+                      >
+                        <option value="">No folder</option>
+                        {folderOptions.map((folder) => (
+                          <option key={folder.id} value={folder.id}>{folder.label}</option>
+                        ))}
+                      </select>
+                      <Button variant="destructive" onClick={() => deleteItem(item.id)}>Delete</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

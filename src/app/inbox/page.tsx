@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useTheme } from "next-themes";
+import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AccountSwitcher,
@@ -24,6 +26,8 @@ import { starflowWS } from "@/lib/ws";
 
 export default function InboxPage() {
   const router = useRouter();
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const [auth, setAuth] = useState<ReturnType<typeof getAuthData>>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
@@ -32,6 +36,8 @@ export default function InboxPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [lockedModalOpen, setLockedModalOpen] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     const authData = getAuthData();
@@ -55,12 +61,11 @@ export default function InboxPage() {
     try {
       const data = await accountsApi.list();
       setAccounts(data);
-      // Default to first account if none selected
       if (data.length > 0) {
         setSelectedAccountId((prev) => prev ?? data[0].id);
       }
     } catch {
-      // chatters might not have access — show all conversations
+      // chatters might not have access
     }
   }, []);
 
@@ -124,7 +129,6 @@ export default function InboxPage() {
     };
   }, [auth, loadConversations]);
 
-  // Filtered conversations for selected account
   const filteredConversations = useMemo(() => {
     if (!selectedAccountId) return conversations;
     return conversations.filter(
@@ -132,7 +136,6 @@ export default function InboxPage() {
     );
   }, [conversations, selectedAccountId]);
 
-  // Conversation counts per account (total + unread)
   const conversationCounts = useMemo(() => {
     const map = new Map<number, { total: number; unread: number }>();
     for (const c of conversations) {
@@ -144,7 +147,6 @@ export default function InboxPage() {
     return map;
   }, [conversations]);
 
-  // Find the account for the selected conversation
   const selectedAccount = useMemo(() => {
     if (!selectedConv) return null;
     return accounts.find((a) => a.id === selectedConv.telegram_account_id) ?? null;
@@ -152,7 +154,6 @@ export default function InboxPage() {
 
   const handleSelectAccount = (accountId: number) => {
     setSelectedAccountId(accountId);
-    // Clear selected conversation if it belongs to a different account
     if (selectedConv && selectedConv.telegram_account_id !== accountId) {
       setSelectedConv(null);
       setMessages([]);
@@ -186,8 +187,8 @@ export default function InboxPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a]">
-        <div className="animate-pulse text-muted-foreground">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-indigo-50 to-slate-100 dark:from-slate-950 dark:via-indigo-950 dark:to-slate-950">
+        <div className="animate-pulse text-slate-400 dark:text-white/40">
           Loading inbox...
         </div>
       </div>
@@ -195,33 +196,33 @@ export default function InboxPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#0a0a0a]">
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.06] bg-[#0e0e0e]">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-slate-100 via-indigo-50 to-slate-100 dark:from-slate-950 dark:via-indigo-950 dark:to-slate-950">
+      {/* Top bar - glass */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-white/70 dark:bg-white/5 backdrop-blur-xl border-b border-slate-200/70 dark:border-white/10 shadow-sm dark:shadow-none">
         <div className="flex items-center gap-4">
-          <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
+          <span className="text-lg font-bold bg-gradient-to-r from-blue-500 to-indigo-500 bg-clip-text text-transparent">
             Starflow
           </span>
           <nav className="flex items-center gap-1">
             <Link href="/inbox">
-              <Button variant="ghost" size="sm" className="text-white text-xs h-8">
+              <Button variant="ghost" size="sm" className="text-slate-900 dark:text-white text-xs h-8 bg-black/5 dark:bg-white/10">
                 Inbox
               </Button>
             </Link>
             {auth?.role === "agency" && (
               <>
                 <Link href="/accounts">
-                  <Button variant="ghost" size="sm" className="text-xs h-8">
+                  <Button variant="ghost" size="sm" className="text-xs h-8 text-slate-600 dark:text-white/60 hover:text-slate-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10">
                     Accounts
                   </Button>
                 </Link>
                 <Link href="/chatters">
-                  <Button variant="ghost" size="sm" className="text-xs h-8">
+                  <Button variant="ghost" size="sm" className="text-xs h-8 text-slate-600 dark:text-white/60 hover:text-slate-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10">
                     Chatters
                   </Button>
                 </Link>
                 <Link href="/billing">
-                  <Button variant="ghost" size="sm" className="text-xs h-8">
+                  <Button variant="ghost" size="sm" className="text-xs h-8 text-slate-600 dark:text-white/60 hover:text-slate-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10">
                     Billing
                   </Button>
                 </Link>
@@ -229,12 +230,21 @@ export default function InboxPage() {
             )}
           </nav>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">{auth?.name}</span>
-          <span className="text-[10px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded-full uppercase tracking-wider font-medium">
+        <div className="flex items-center gap-2">
+          {mounted && (
+            <button
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="p-2 rounded-lg bg-black/5 hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-200/70 dark:border-white/10 transition-all text-slate-700 dark:text-white/70 hover:text-slate-900 dark:hover:text-white"
+              aria-label="Toggle theme"
+            >
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+          )}
+          <span className="text-xs text-slate-500 dark:text-white/50">{auth?.name}</span>
+          <span className="text-[10px] bg-blue-500/20 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full uppercase tracking-wider font-medium">
             {auth?.role}
           </span>
-          <Button variant="ghost" size="sm" className="text-xs h-8" onClick={handleLogout}>
+          <Button variant="ghost" size="sm" className="text-xs h-8 text-slate-600 dark:text-white/60 hover:text-slate-900 dark:hover:text-white" onClick={handleLogout}>
             Logout
           </Button>
         </div>
@@ -242,12 +252,12 @@ export default function InboxPage() {
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* ── Sidebar ── */}
-        <div className="w-80 border-r border-white/[0.06] bg-[#0a0a0a] flex flex-col">
+        {/* Sidebar - glass */}
+        <div className="w-80 bg-white/60 dark:bg-white/[0.03] backdrop-blur-2xl border-r border-slate-200/70 dark:border-white/[0.07] flex flex-col">
           {/* Account switcher */}
-          <div className="border-b border-white/[0.06]">
+          <div className="border-b border-slate-200/50 dark:border-white/[0.06]">
             <div className="px-4 pt-3 pb-1.5">
-              <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+              <h3 className="text-[10px] font-semibold text-slate-400 dark:text-white/40 uppercase tracking-widest">
                 Accounts
               </h3>
             </div>
@@ -262,10 +272,10 @@ export default function InboxPage() {
           {/* Conversation list */}
           <div className="flex-1 flex flex-col min-h-0">
             <div className="px-4 pt-3 pb-1.5">
-              <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+              <h3 className="text-[10px] font-semibold text-slate-400 dark:text-white/40 uppercase tracking-widest">
                 Conversations
                 {filteredConversations.length > 0 && (
-                  <span className="ml-1.5 text-muted-foreground/50">
+                  <span className="ml-1.5 text-slate-300 dark:text-white/30">
                     {filteredConversations.length}
                   </span>
                 )}
@@ -279,14 +289,13 @@ export default function InboxPage() {
           </div>
         </div>
 
-        {/* ── Chat panel ── */}
-        <div className="flex-1 flex flex-col bg-[#111111]">
+        {/* Chat panel - glass */}
+        <div className="flex-1 flex flex-col bg-white/30 dark:bg-white/[0.02]">
           {selectedConv ? (
             <>
               {/* Chat header */}
-              <div className="px-5 py-3 border-b border-white/[0.06] bg-[#0e0e0e] flex items-center gap-4">
-                {/* Contact avatar */}
-                <div className="w-9 h-9 rounded-full bg-[#2a2a2a] flex items-center justify-center text-white/60 text-sm font-medium flex-shrink-0">
+              <div className="px-5 py-3 border-b border-slate-200/50 dark:border-white/[0.06] bg-white/50 dark:bg-white/[0.03] backdrop-blur-xl flex items-center gap-4">
+                <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 dark:text-white/60 text-sm font-medium flex-shrink-0">
                   {(selectedConv.peer_name || "?")
                     .split(/\s+/)
                     .map((w) => w[0])
@@ -297,18 +306,18 @@ export default function InboxPage() {
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-sm text-white">
+                    <span className="font-semibold text-sm text-slate-900 dark:text-white">
                       {selectedConv.peer_name}
                     </span>
                     {selectedConv.peer_username && (
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-xs text-slate-400 dark:text-white/40">
                         @{selectedConv.peer_username}
                       </span>
                     )}
                   </div>
                   {selectedAccount && (
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[11px] text-muted-foreground/60">
+                      <span className="text-[11px] text-slate-400 dark:text-white/40">
                         via
                       </span>
                       <div
@@ -321,7 +330,7 @@ export default function InboxPage() {
                             ],
                         }}
                       />
-                      <span className="text-[11px] text-muted-foreground/60">
+                      <span className="text-[11px] text-slate-400 dark:text-white/40">
                         {selectedAccount.display_name || selectedAccount.phone}
                       </span>
                     </div>
@@ -336,14 +345,14 @@ export default function InboxPage() {
               />
 
               {/* Reply area */}
-              <div className="flex items-center gap-0 bg-[#0e0e0e] border-t border-white/[0.06]">
+              <div className="flex items-center gap-0 bg-white/50 dark:bg-white/[0.03] backdrop-blur-xl border-t border-slate-200/50 dark:border-white/[0.06]">
                 <div className="flex-1">
                   <ReplyBox onSend={handleSend} />
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="mr-3 text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10 whitespace-nowrap text-xs h-8"
+                  className="mr-3 text-yellow-600 dark:text-yellow-400 hover:text-yellow-500 dark:hover:text-yellow-300 hover:bg-yellow-100 dark:hover:bg-yellow-400/10 whitespace-nowrap text-xs h-8"
                   onClick={() => setLockedModalOpen(true)}
                 >
                   Send Locked
@@ -362,7 +371,7 @@ export default function InboxPage() {
               />
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2">
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 dark:text-white/40 gap-2">
               <div className="text-4xl opacity-20">💬</div>
               <div className="text-sm">Select a conversation to start messaging</div>
             </div>

@@ -96,6 +96,13 @@ export const accountsApi = {
     request("/accounts/start-qr-auth", { method: "POST" }),
   qrStatus: (auth_token: string) =>
     request(`/accounts/qr-status/${auth_token}`),
+  syncHistory: (id: number) =>
+    request(`/accounts/${id}/sync`, { method: "POST" }),
+  rename: (id: number, display_name: string) =>
+    request(`/accounts/${id}/rename`, {
+      method: "PATCH",
+      body: JSON.stringify({ display_name }),
+    }),
   submitQrPassword: (auth_token: string, password: string) =>
     request("/accounts/qr-password", {
       method: "POST",

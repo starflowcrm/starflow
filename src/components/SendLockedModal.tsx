@@ -47,7 +47,6 @@ export function SendLockedModal({ open, onOpenChange, conversationId, conversati
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Vault state
   const [vaultItems, setVaultItems] = useState<VaultItem[]>([]);
   const [vaultLoading, setVaultLoading] = useState(false);
   const [selectedVaultItem, setSelectedVaultItem] = useState<VaultItem | null>(null);
@@ -62,7 +61,6 @@ export function SendLockedModal({ open, onOpenChange, conversationId, conversati
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  // Load vault items when switching to vault tab
   useEffect(() => {
     if (tab === "vault" && open && vaultItems.length === 0) {
       setVaultLoading(true);
@@ -70,11 +68,15 @@ export function SendLockedModal({ open, onOpenChange, conversationId, conversati
       const vaultUrl = conversationAccountId ? `${API_BASE}/vault/?account_id=${conversationAccountId}` : `${API_BASE}/vault/`;
       fetch(vaultUrl, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
         .then(r => r.json())
-        .then(data => { setVaultItems(Array.isArray(data) ? data : []); })
+        .then(data => {
+          // Backend returns { items, folders }; tolerate old array shape just in case.
+          if (Array.isArray(data)) setVaultItems(data);
+          else setVaultItems(Array.isArray(data?.items) ? data.items : []);
+        })
         .catch(() => {})
         .finally(() => setVaultLoading(false));
     }
-  }, [tab, open, vaultItems.length]);
+  }, [tab, open, vaultItems.length, conversationAccountId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,52 +115,52 @@ export function SendLockedModal({ open, onOpenChange, conversationId, conversati
 
   return (
     <Dialog open={open} onOpenChange={v => { onOpenChange(v); reset(); }}>
-      <DialogContent className="bg-[#1a1a1a] border-white/10 sm:max-w-md">
+      <DialogContent className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border border-slate-200/70 dark:border-white/10 sm:max-w-md shadow-2xl">
         <DialogHeader>
-          <DialogTitle>Send Locked Media</DialogTitle>
+          <DialogTitle className="text-slate-900 dark:text-white">Send Locked Media</DialogTitle>
         </DialogHeader>
 
         {/* Tab switcher */}
-        <div className="flex gap-1 bg-[#0f0f0f] p-1 rounded-lg">
+        <div className="flex gap-1 bg-slate-100 dark:bg-white/5 p-1 rounded-lg">
           <button onClick={() => setTab("upload")}
-            className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${tab === "upload" ? "bg-[#1a1a1a] text-white" : "text-white/40 hover:text-white/70"}`}>
+            className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${tab === "upload" ? "bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm" : "text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/70"}`}>
             Upload New
           </button>
           <button onClick={() => setTab("vault")}
-            className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${tab === "vault" ? "bg-[#1a1a1a] text-white" : "text-white/40 hover:text-white/70"}`}>
+            className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${tab === "vault" ? "bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm" : "text-slate-500 dark:text-white/40 hover:text-slate-700 dark:hover:text-white/70"}`}>
             From Vault
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <div className="text-sm text-red-400 bg-red-400/10 p-3 rounded-lg">{error}</div>}
+          {error && <div className="text-sm text-red-500 dark:text-red-400 bg-red-100 dark:bg-red-400/10 p-3 rounded-lg border border-red-200 dark:border-red-400/20">{error}</div>}
 
           {tab === "upload" ? (
             <div className="space-y-2">
-              <Label className="text-xs">Photo or Video</Label>
+              <Label className="text-xs text-slate-600 dark:text-white/60">Photo or Video</Label>
               <Input ref={fileRef} type="file" accept="image/*,video/*"
                 onChange={e => setFile(e.target.files?.[0] || null)}
-                className="bg-[#0f0f0f] border-white/10" />
-              {file && <p className="text-xs text-white/40">{file.name} ({mediaType}) — {(file.size / 1024 / 1024).toFixed(1)} MB</p>}
+                className="bg-white/50 dark:bg-white/5 border-slate-200/70 dark:border-white/10" />
+              {file && <p className="text-xs text-slate-400 dark:text-white/40">{file.name} ({mediaType}) — {(file.size / 1024 / 1024).toFixed(1)} MB</p>}
             </div>
           ) : (
             <div className="space-y-2">
-              <Label className="text-xs">Select from Vault</Label>
+              <Label className="text-xs text-slate-600 dark:text-white/60">Select from Vault</Label>
               {vaultLoading ? (
-                <p className="text-xs text-white/40 py-4 text-center">Loading vault...</p>
+                <p className="text-xs text-slate-400 dark:text-white/40 py-4 text-center">Loading vault...</p>
               ) : vaultItems.length === 0 ? (
-                <p className="text-xs text-white/40 py-4 text-center">
-                  Vault is empty. <a href="/vault" className="text-blue-400 underline">Upload items</a> first.
+                <p className="text-xs text-slate-400 dark:text-white/40 py-4 text-center">
+                  Vault is empty. {conversationAccountId ? <a href={`/accounts/${conversationAccountId}/vault`} className="text-blue-500 dark:text-blue-400 underline">Upload items</a> : "Upload items"} first.
                 </p>
               ) : (
                 <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
                   {vaultItems.map(item => (
                     <button key={item.id} type="button"
                       onClick={() => { setSelectedVaultItem(item); setStarCount(String(item.default_star_price)); }}
-                      className={`bg-[#0f0f0f] border rounded-lg p-2 text-center transition-all ${selectedVaultItem?.id === item.id ? "border-blue-500 bg-blue-500/10" : "border-white/10 hover:border-white/30"}`}>
+                      className={`bg-white/50 dark:bg-white/5 border rounded-lg p-2 text-center transition-all ${selectedVaultItem?.id === item.id ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10" : "border-slate-200/70 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/30"}`}>
                       <div className="text-2xl">{item.media_type === "video" ? "🎬" : "📷"}</div>
-                      <p className="text-[9px] text-white/60 truncate mt-1">{item.name}</p>
-                      <p className="text-[9px] text-yellow-400">{item.default_star_price}⭐</p>
+                      <p className="text-[9px] text-slate-500 dark:text-white/60 truncate mt-1">{item.name}</p>
+                      <p className="text-[9px] text-yellow-600 dark:text-yellow-400">{item.default_star_price}⭐</p>
                     </button>
                   ))}
                 </div>
@@ -167,19 +169,19 @@ export function SendLockedModal({ open, onOpenChange, conversationId, conversati
           )}
 
           <div className="space-y-2">
-            <Label className="text-xs">Star Price</Label>
+            <Label className="text-xs text-slate-600 dark:text-white/60">Star Price</Label>
             <Input type="number" min={1} max={10000} value={starCount}
               onChange={e => setStarCount(e.target.value)}
-              className="bg-[#0f0f0f] border-white/10" />
+              className="bg-white/50 dark:bg-white/5 border-slate-200/70 dark:border-white/10" />
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs">Caption (optional)</Label>
+            <Label className="text-xs text-slate-600 dark:text-white/60">Caption (optional)</Label>
             <Input value={caption} onChange={e => setCaption(e.target.value)}
-              placeholder="Exclusive content..." className="bg-[#0f0f0f] border-white/10" />
+              placeholder="Exclusive content..." className="bg-white/50 dark:bg-white/5 border-slate-200/70 dark:border-white/10" />
           </div>
 
-          <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700"
+          <Button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-500/25"
             disabled={(tab === "upload" ? !file : !selectedVaultItem) || sending}>
             {sending ? "Sending..." : `🔒 Send for ${starCount} ⭐`}
           </Button>

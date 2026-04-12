@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
 export function ReplyBox({
   onSend,
@@ -13,9 +12,13 @@ export function ReplyBox({
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const send = async () => {
     const msg = text.trim();
     if (!msg || sending) return;
 
@@ -25,28 +28,36 @@ export function ReplyBox({
       setText("");
     } finally {
       setSending(false);
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
     }
   };
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex items-center gap-2 p-3 bg-transparent"
-    >
-      <Input
+    <div className="flex items-center gap-2 p-3 bg-transparent">
+      <input
+        ref={inputRef}
+        type="text"
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder="Type a message..."
         disabled={disabled || sending}
-        className="flex-1 bg-[#1a1a1a] border-white/10"
+        className="flex-1 bg-white/50 dark:bg-white/5 border border-slate-200/70 dark:border-white/10 backdrop-blur-sm rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/30 outline-none focus:border-blue-400 dark:focus:border-blue-500/50 focus:ring-1 focus:ring-blue-400/20 dark:focus:ring-blue-500/20 disabled:opacity-50 transition-all"
       />
       <Button
-        type="submit"
+        onClick={send}
         disabled={!text.trim() || sending || disabled}
-        className="bg-blue-600 hover:bg-blue-700 px-6"
+        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 px-6 shadow-lg shadow-blue-500/20"
       >
         {sending ? "..." : "Send"}
       </Button>
-    </form>
+    </div>
   );
 }

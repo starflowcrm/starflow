@@ -4,49 +4,49 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --background: 226 57% 97%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 226 57% 93%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 226 57% 93%;
+    --muted-foreground: 222 20% 45%;
+    --accent: 230 93% 94%;
+    --accent-foreground: 222 47% 11%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --radius: 0.625rem;
+    --border: 222 30% 85%;
+    --input: 222 30% 85%;
+    --ring: 221 83% 53%;
+    --radius: 0.75rem;
   }
 
   .dark {
-    --background: 0 0% 5%;
+    --background: 230 35% 4%;
     --foreground: 0 0% 95%;
-    --card: 0 0% 10%;
+    --card: 230 25% 8%;
     --card-foreground: 0 0% 95%;
-    --popover: 0 0% 10%;
+    --popover: 230 25% 8%;
     --popover-foreground: 0 0% 95%;
-    --primary: 217 91% 60%;
+    --primary: 221 83% 60%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 15%;
+    --secondary: 230 20% 14%;
     --secondary-foreground: 0 0% 95%;
-    --muted: 0 0% 15%;
+    --muted: 230 20% 14%;
     --muted-foreground: 0 0% 55%;
-    --accent: 0 0% 15%;
+    --accent: 230 20% 14%;
     --accent-foreground: 0 0% 95%;
     --destructive: 0 63% 31%;
     --destructive-foreground: 0 0% 95%;
-    --border: 0 0% 18%;
-    --input: 0 0% 18%;
-    --ring: 217 91% 60%;
-    --radius: 0.625rem;
+    --border: 230 20% 16%;
+    --input: 230 20% 16%;
+    --ring: 221 83% 60%;
+    --radius: 0.75rem;
   }
 }
 
@@ -57,4 +57,116 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* ── Glassmorphism Utilities ── */
+@layer utilities {
+  .glass {
+    @apply bg-white/70 backdrop-blur-xl border border-white/20;
+  }
+  .dark .glass,
+  .glass-dark {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+  }
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-xl border border-white/30 shadow-lg shadow-black/5;
+  }
+  :is(.dark .glass-card) {
+    @apply bg-white/5 backdrop-blur-xl border-white/10 shadow-lg shadow-black/20;
+  }
+  .glass-sidebar {
+    @apply bg-white/60 backdrop-blur-2xl border-r border-slate-200/70;
+  }
+  :is(.dark .glass-sidebar) {
+    @apply bg-white/[0.03] backdrop-blur-2xl border-white/[0.07];
+  }
+  .glass-nav {
+    @apply bg-white/70 backdrop-blur-xl border-b border-slate-200/70 shadow-sm;
+  }
+  :is(.dark .glass-nav) {
+    @apply bg-white/5 backdrop-blur-xl border-white/10 shadow-none;
+  }
+  .glass-input {
+    @apply bg-white/50 border border-slate-200/70 backdrop-blur-sm;
+  }
+  :is(.dark .glass-input) {
+    @apply bg-white/5 border-white/10;
+  }
+
+  /* Gradient mesh backgrounds */
+  .bg-mesh {
+    @apply bg-gradient-to-br from-slate-100 via-indigo-50 to-slate-100;
+  }
+  :is(.dark .bg-mesh) {
+    background: linear-gradient(135deg, #020617 0%, #0c0a2e 35%, #0d1a3a 65%, #020617 100%);
+  }
+
+  /* Accent gradient */
+  .accent-gradient {
+    @apply bg-gradient-to-r from-blue-600 to-indigo-600;
+  }
+}
+
+/* Blob animations */
+@keyframes blob-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%       { transform: translate(20px, -20px) scale(1.05); }
+  66%       { transform: translate(-15px, 10px) scale(0.97); }
+}
+
+@keyframes blob-float-slow {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%       { transform: translate(-30px, 15px) scale(1.08); }
+}
+
+.blob {
+  @apply absolute rounded-full pointer-events-none;
+  filter: blur(80px);
+  opacity: 0.12;
+  animation: blob-float 8s ease-in-out infinite;
+}
+:is(.dark .blob) {
+  opacity: 0.08;
+}
+.blob-1 { animation-delay: 0s; }
+.blob-2 { animation-delay: -2.5s; }
+.blob-3 { animation-delay: -5s; }
+.blob-slow {
+  animation: blob-float-slow 12s ease-in-out infinite;
+}
+
+/* ── Vault folder drag-and-drop (DOM-driven, no React re-renders) ── */
+.vault-drop-indicator {
+  height: 0;
+  overflow: hidden;
+  border-radius: 9999px;
+  pointer-events: none;
+  transition: height 100ms ease, margin 100ms ease;
+}
+.vault-drop-indicator-active {
+  height: 3px;
+  margin: 6px 0;
+  background: rgba(96, 165, 250, 0.8);
+  box-shadow: 0 0 12px rgba(96, 165, 250, 0.55);
+}
+.vault-row-drop-inside {
+  transform: scale(1.01);
+  background: rgba(59, 130, 246, 0.15) !important;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.7), 0 0 20px rgba(96, 165, 250, 0.18) !important;
+  transition: transform 100ms ease, background 100ms ease, box-shadow 100ms ease;
+}
+
+/* Custom scrollbar for glass surfaces */
+:is(.dark) ::-webkit-scrollbar {
+  width: 6px;
+}
+:is(.dark) ::-webkit-scrollbar-track {
+  background: transparent;
+}
+:is(.dark) ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+:is(.dark) ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }

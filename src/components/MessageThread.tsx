@@ -19,13 +19,15 @@ function formatTimestamp(dateStr: string) {
 }
 
 function parseLockedMedia(text: string): { stars: number; caption: string; unlocked: boolean } | null {
-  const unlockedMatch = text.match(/^\[Paid Media\s*[–-]\s*(\d+)\s*[⭐★]\]/i);
+  // Matches "[Locked Media - 100 ⭐]", "[Paid Media - 100 ★]" and the legacy
+  // "[Locked Media - 100 Stars]" wording.
+  const unlockedMatch = text.match(/^\[Paid Media\s*[–-]\s*(\d+)\s*(?:[⭐★]|Stars?)\]/i);
   if (unlockedMatch) {
-    return { stars: parseInt(unlockedMatch[1]), caption: text.replace(/^\[Paid Media\s*[–-]\s*\d+\s*[⭐★]\]\s*/, "").trim(), unlocked: true };
+    return { stars: parseInt(unlockedMatch[1]), caption: text.replace(/^\[Paid Media\s*[–-]\s*\d+\s*(?:[⭐★]|Stars?)\]\s*/i, "").trim(), unlocked: true };
   }
-  const lockedMatch = text.match(/^\[Locked Media\s*[–-]\s*(\d+)\s*[⭐★]\]/i);
+  const lockedMatch = text.match(/^\[Locked Media\s*[–-]\s*(\d+)\s*(?:[⭐★]|Stars?)\]/i);
   if (lockedMatch) {
-    return { stars: parseInt(lockedMatch[1]), caption: text.replace(/^\[Locked Media\s*[–-]\s*\d+\s*[⭐★]\]\s*/, "").trim(), unlocked: false };
+    return { stars: parseInt(lockedMatch[1]), caption: text.replace(/^\[Locked Media\s*[–-]\s*\d+\s*(?:[⭐★]|Stars?)\]\s*/i, "").trim(), unlocked: false };
   }
   return null;
 }

@@ -79,7 +79,7 @@ export const authApi = {
 
 // Accounts
 export const accountsApi = {
-  list: () => request("/accounts"),
+  list: () => request("/accounts/"),
   startAuth: (phone: string) =>
     request("/accounts/start-auth", {
       method: "POST",
@@ -89,6 +89,11 @@ export const accountsApi = {
     request("/accounts/verify-code", {
       method: "POST",
       body: JSON.stringify({ auth_token, phone, code }),
+    }),
+  verifyPassword: (auth_token: string, password: string) =>
+    request("/accounts/verify-password", {
+      method: "POST",
+      body: JSON.stringify({ auth_token, password }),
     }),
   delete: (id: number) => request(`/accounts/${id}`, { method: "DELETE" }),
   // QR Code auth
@@ -126,9 +131,9 @@ export const accountsApi = {
 
 // Chatters
 export const chattersApi = {
-  list: () => request("/chatters"),
+  list: () => request("/chatters/"),
   create: (data: { name: string; email: string; password: string }) =>
-    request("/chatters", { method: "POST", body: JSON.stringify(data) }),
+    request("/chatters/", { method: "POST", body: JSON.stringify(data) }),
   assign: (chatterId: number, accountIds: number[]) =>
     request(`/chatters/${chatterId}/assign`, {
       method: "POST",
@@ -139,7 +144,7 @@ export const chattersApi = {
 
 // Conversations
 export const conversationsApi = {
-  list: () => request("/conversations"),
+  list: () => request("/conversations/"),
   getMessages: (id: number) => request(`/conversations/${id}/messages`),
   assign: (id: number, chatterId: number | null) =>
     request(`/conversations/${id}/assign`, {

@@ -50,7 +50,7 @@ export default function AccountsPage() {
   const qrRefreshTimer = useRef<NodeJS.Timeout | null>(null);
   const qrPollTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const [step, setStep] = useState<"phone" | "code">("phone");
+  const [step, setStep] = useState<"phone" | "code" | "password">("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [authToken, setAuthToken] = useState("");
@@ -165,12 +165,29 @@ export default function AccountsPage() {
     e.preventDefault();
     setError(""); setSubmitting(true);
     try {
-      await accountsApi.verifyCode(authToken, phone, code);
+      const result = await accountsApi.verifyCode(authToken, phone, code);
+      if (result.needs_password) {
+        setStep("password");
+        return;
+      }
       setDialogOpen(false);
       resetDialog();
       await loadAccounts();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
+    } finally { setSubmitting(false); }
+  };
+
+  const handleVerifyPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(""); setSubmitting(true);
+    try {
+      await accountsApi.verifyPassword(authToken, twoFaPassword);
+      setDialogOpen(false);
+      resetDialog();
+      await loadAccounts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid 2FA password");
     } finally { setSubmitting(false); }
   };
 
@@ -328,7 +345,7 @@ export default function AccountsPage() {
 
               {activeTab === "phone" && (
                 <>
-                  {step === "phone" ? (
+                  {step === "phone" && (
                     <form onSubmit={handleStartAuth} className="space-y-4">
                       <div className="space-y-2">
                         <Label className="text-slate-700 dark:text-white/70">Phone Number (with country code)</Label>
@@ -340,7 +357,8 @@ export default function AccountsPage() {
                         {submitting ? "Sending..." : "Send Code"}
                       </Button>
                     </form>
-                  ) : (
+                  )}
+                  {step === "code" && (
                     <form onSubmit={handleVerifyCode} className="space-y-4">
                       <div className="space-y-2">
                         <Label className="text-slate-700 dark:text-white/70">Verification Code</Label>
@@ -351,6 +369,22 @@ export default function AccountsPage() {
                       </div>
                       <Button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500" disabled={submitting}>
                         {submitting ? "Verifying..." : "Verify"}
+                      </Button>
+                    </form>
+                  )}
+                  {step === "password" && (
+                    <form onSubmit={handleVerifyPassword} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label className="text-slate-700 dark:text-white/70">Two-Factor Password</Label>
+                        <Input type="password" placeholder="2FA Password" value={twoFaPassword}
+                          onChange={(e) => setTwoFaPassword(e.target.value)} required autoFocus
+                          className="bg-white/50 dark:bg-white/5 border-slate-200/70 dark:border-white/10" />
+                        <p className="text-xs text-slate-400 dark:text-white/40">
+                          This account has two-factor authentication enabled. Enter your Telegram 2FA password.
+                        </p>
+                      </div>
+                      <Button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500" disabled={submitting}>
+                        {submitting ? "Verifying..." : "Submit Password"}
                       </Button>
                     </form>
                   )}

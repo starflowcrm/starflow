@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useTheme } from "next-themes";
@@ -36,6 +36,9 @@ export default function InboxPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [lockedModalOpen, setLockedModalOpen] = useState(false);
+  // The WS handler is registered once; a ref avoids it closing over a stale
+  // selected conversation.
+  const selectedConvIdRef = useRef<number | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -60,9 +63,12 @@ export default function InboxPage() {
   const loadAccounts = useCallback(async () => {
     try {
       const data = await accountsApi.list();
-      setAccounts(data);
-      if (data.length > 0) {
-        setSelectedAccountId((prev) => prev ?? data[0].id);
+      const active = data.filter(
+        (a: AccountInfo & { is_active?: boolean }) => a.is_active !== false
+      );
+      setAccounts(active);
+      if (active.length > 0) {
+        setSelectedAccountId((prev) => prev ?? active[0].id);
       }
     } catch {
       // chatters might not have access
@@ -88,18 +94,17 @@ export default function InboxPage() {
         const convId = data.conversation_id as number;
 
         setMessages((prev) => {
-          if (prev.length > 0 && prev[0]?.conversation_id === convId) {
-            if (
-              msg.telegram_message_id &&
-              prev.some(
-                (m) => m.telegram_message_id === msg.telegram_message_id
-              )
-            ) {
-              return prev;
-            }
-            return [...prev, msg];
+          if (selectedConvIdRef.current !== convId) return prev;
+          if (
+            msg.telegram_message_id &&
+            prev.some(
+              (m) => m.telegram_message_id === msg.telegram_message_id
+            )
+          ) {
+            return prev;
           }
-          return prev;
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
         });
 
         loadConversations();
@@ -114,10 +119,8 @@ export default function InboxPage() {
       const msg = data.message as Message;
       const convId = data.conversation_id as number;
       setMessages((prev) => {
-        if (prev.length > 0 && prev[0]?.conversation_id === convId) {
-          return prev.map((m) => m.id === msg.id ? { ...m, text: msg.text } : m);
-        }
-        return prev;
+        if (selectedConvIdRef.current !== convId) return prev;
+        return prev.map((m) => m.id === msg.id ? { ...m, text: msg.text } : m);
       });
     });
 
@@ -157,11 +160,13 @@ export default function InboxPage() {
     if (selectedConv && selectedConv.telegram_account_id !== accountId) {
       setSelectedConv(null);
       setMessages([]);
+      selectedConvIdRef.current = null;
     }
   };
 
   const handleSelectConversation = async (conv: Conversation) => {
     setSelectedConv(conv);
+    selectedConvIdRef.current = conv.id;
     try {
       const msgs = await conversationsApi.getMessages(conv.id);
       setMessages(msgs);

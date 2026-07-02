@@ -9,12 +9,31 @@ class StarflowWS {
   private token: string | null = null;
 
   connect(token: string) {
+    if (
+      this.token === token &&
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
     this.token = token;
     this.doConnect();
   }
 
   private doConnect() {
     if (!this.token) return;
+
+    // Replace any previous socket without letting its close handler
+    // schedule a competing reconnect.
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
+      try {
+        this.ws.close();
+      } catch {}
+      this.ws = null;
+    }
 
     try {
       this.ws = new WebSocket(`${WS_BASE}/ws?token=${this.token}`);

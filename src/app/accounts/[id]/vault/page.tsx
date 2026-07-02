@@ -71,67 +71,70 @@ function computeDropPosition(ratio: number): DropPosition {
   return "inside";
 }
 
-function moveFolderInTree(
+type DropTarget =
+  | { kind: "folder"; folderId: number; position: DropPosition }
+  | { kind: "root" };
+
+function layoutKey(folders: VaultFolder[]): string {
+  return folders
+    .map((f) => `${f.id}:${f.parent_id ?? ""}:${f.sort_order ?? 0}`)
+    .sort()
+    .join("|");
+}
+
+function applyFolderMove(
   folders: VaultFolder[],
   draggedId: number,
-  targetFolderId: number,
-  position: DropPosition,
-): VaultFolder[] {
+  target: DropTarget,
+): VaultFolder[] | null {
   const next = folders.map((folder) => ({ ...folder }));
   const dragged = next.find((folder) => folder.id === draggedId);
-  const target = next.find((folder) => folder.id === targetFolderId);
-  if (!dragged || !target || dragged.id === target.id) return folders;
+  if (!dragged) return null;
 
-  if (position === "inside") {
-    if (isDescendant(next, target.id, dragged.id)) return folders;
+  let newParentId: number | null;
+  let anchor: { id: number; position: "before" | "after" } | null = null;
 
-    if (dragged.parent_id === target.id) {
-      dragged.parent_id = target.parent_id ?? null;
-    } else {
-      dragged.parent_id = target.id;
-    }
+  if (target.kind === "root") {
+    newParentId = null;
   } else {
-    if (target.parent_id != null && isDescendant(next, target.parent_id, dragged.id)) return folders;
-    dragged.parent_id = target.parent_id ?? null;
+    const targetFolder = next.find((folder) => folder.id === target.folderId);
+    if (!targetFolder || targetFolder.id === dragged.id) return null;
+    if (target.position === "inside") {
+      newParentId = targetFolder.id;
+    } else {
+      newParentId = targetFolder.parent_id ?? null;
+      anchor = { id: targetFolder.id, position: target.position };
+    }
   }
 
-  const touchedParentIds = Array.from(new Set<number | null>([
-    dragged.parent_id ?? null,
-    target.parent_id ?? null,
-  ]));
+  if (newParentId === dragged.id) return null;
+  if (newParentId != null && isDescendant(next, newParentId, dragged.id)) return null;
 
-  for (const parentId of touchedParentIds) {
-    const siblings = sortFolders(next).filter((folder) => (folder.parent_id ?? null) === parentId && folder.id !== dragged.id);
-    const insertIndex = (() => {
-      if ((dragged.parent_id ?? null) !== parentId) return -1;
-      const targetIndex = siblings.findIndex((folder) => folder.id === target.id);
-      if (position === "inside") return siblings.length;
-      if (targetIndex === -1) return siblings.length;
-      return position === "before" ? targetIndex : targetIndex + 1;
-    })();
+  const oldParentId = dragged.parent_id ?? null;
+  dragged.parent_id = newParentId;
 
-    if (insertIndex >= 0) siblings.splice(insertIndex, 0, dragged);
+  const destSiblings = sortFolders(next).filter(
+    (folder) => (folder.parent_id ?? null) === newParentId && folder.id !== dragged.id
+  );
+  let insertAt = destSiblings.length;
+  if (anchor) {
+    const anchorIndex = destSiblings.findIndex((folder) => folder.id === anchor!.id);
+    if (anchorIndex !== -1) insertAt = anchor.position === "before" ? anchorIndex : anchorIndex + 1;
+  }
+  destSiblings.splice(insertAt, 0, dragged);
+  destSiblings.forEach((folder, index) => {
+    folder.sort_order = index;
+  });
 
-    siblings.forEach((folder, index) => {
-      const match = next.find((candidate) => candidate.id === folder.id);
-      if (match) {
-        match.parent_id = parentId;
-        match.sort_order = index;
-      }
-    });
+  if (oldParentId !== newParentId) {
+    sortFolders(next)
+      .filter((folder) => (folder.parent_id ?? null) === oldParentId)
+      .forEach((folder, index) => {
+        folder.sort_order = index;
+      });
   }
 
   return next;
-}
-
-// Folders are stored flat (each has a parent_id), so these helpers are pass-throughs.
-// moveFolderInTree already assigns correct sort_order values per parent group.
-function normalizeFolderTree(folders: VaultFolder[]): VaultFolder[] {
-  return folders;
-}
-
-function flattenFolderTree(folders: VaultFolder[]): VaultFolder[] {
-  return folders;
 }
 
 function FolderRow({
@@ -168,11 +171,7 @@ function FolderRow({
   const isPreviewAfter = dropPreview.folderId === folder.id && dropPreview.position === "after";
 
   return (
-    <div
-      onDragOver={(e) => onDragOver(folder.id, e)}
-      onDrop={(e) => onDrop(folder.id, e)}
-      className={isSubfolder ? "ml-4 border-l border-white/10 pl-3" : ""}
-    >
+    <div className={isSubfolder ? "ml-4 border-l border-white/10 pl-3" : ""}>
       <div className={`pointer-events-none transition-all duration-150 ${isPreviewBefore ? "mb-2 h-3 rounded-full bg-blue-400/80 shadow-[0_0_12px_rgba(96,165,250,0.55)]" : "mb-0 h-0"}`} />
       <div
         onDragOver={(e) => onDragOver(folder.id, e)}
@@ -304,6 +303,7 @@ export default function AccountVaultPage() {
   const [activeFolderFilter, setActiveFolderFilter] = useState<number | null>(null);
   const [draggingFolderId, setDraggingFolderId] = useState<number | null>(null);
   const [dropPreview, setDropPreview] = useState<{ folderId: number | null; position: DropPosition | null }>({ folderId: null, position: null });
+  const [rootDropActive, setRootDropActive] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -342,18 +342,39 @@ export default function AccountVaultPage() {
 
   const folderOptions = useMemo(() => buildFolderOptions(folders), [folders]);
 
-  async function syncFolderOrder(nextFolders: VaultFolder[]) {
-    const changedFolders = flattenFolderTree(nextFolders);
-    for (const folder of changedFolders) {
-      const form = new FormData();
-      // Only send parent_id when non-null; omitting it lets the backend keep it as NULL (top level).
-      if (folder.parent_id != null) form.append("parent_id", String(folder.parent_id));
-      form.append("sort_order", String(folder.sort_order ?? 0));
-      const res = await authFetch(`/vault/folders/${folder.id}`, { method: "PATCH", body: form });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || "Failed to reorder folder");
-      }
+  async function persistFolderLayout(nextFolders: VaultFolder[]): Promise<VaultFolder[]> {
+    const res = await authFetch("/vault/folders/reorder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folders: nextFolders.map((f) => ({
+          id: f.id,
+          parent_id: f.parent_id ?? null,
+          sort_order: f.sort_order ?? 0,
+        })),
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || "Failed to save folder order");
+    }
+    const data = await res.json();
+    return (data.folders || []) as VaultFolder[];
+  }
+
+  async function commitFolderMove(draggedId: number, target: DropTarget) {
+    const moved = applyFolderMove(folders, draggedId, target);
+    if (!moved || layoutKey(moved) === layoutKey(folders)) return;
+
+    const previousFolders = folders;
+    setFolders(moved);
+    setError("");
+    try {
+      const canonical = await persistFolderLayout(moved);
+      setFolders(canonical);
+    } catch (err) {
+      setFolders(previousFolders);
+      setError(err instanceof Error ? err.message : "Failed to save folder order");
     }
   }
 
@@ -366,6 +387,7 @@ export default function AccountVaultPage() {
   function handleDragEnd() {
     setDraggingFolderId(null);
     setDropPreview({ folderId: null, position: null });
+    setRootDropActive(false);
     if (dragFrame.current) {
       cancelAnimationFrame(dragFrame.current);
       dragFrame.current = null;
@@ -394,29 +416,30 @@ export default function AccountVaultPage() {
   async function handleDrop(targetFolderId: number, e: React.DragEvent<HTMLElement>) {
     e.preventDefault();
     e.stopPropagation();
-    const dataStr = e.dataTransfer.getData("text/plain");
-    const draggedId = Number(dataStr || draggingFolderId);
+    const draggedId = Number(e.dataTransfer.getData("text/plain") || draggingFolderId);
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = (e.clientY - rect.top) / rect.height;
     const position: DropPosition = computeDropPosition(ratio);
     handleDragEnd();
 
-    void dataStr;
-    if (!draggedId || !position || draggedId === targetFolderId) return;
+    if (!draggedId || draggedId === targetFolderId) return;
+    await commitFolderMove(draggedId, { kind: "folder", folderId: targetFolderId, position });
+  }
 
-    const movedFolders = moveFolderInTree(folders, draggedId, targetFolderId, position);
-    if (movedFolders === folders) return;
+  function handleRootDragOver(e: React.DragEvent<HTMLElement>) {
+    if (draggingFolderId == null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setRootDropActive(true);
+  }
 
-    const nextFolders = normalizeFolderTree(movedFolders);
-    const previousFolders = folders;
-    setFolders(nextFolders);
-    try {
-      await syncFolderOrder(nextFolders);
-      await loadVault();
-    } catch (err) {
-      setFolders(previousFolders);
-      setError(err instanceof Error ? err.message : "Failed to reorder folder");
-    }
+  async function handleRootDrop(e: React.DragEvent<HTMLElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedId = Number(e.dataTransfer.getData("text/plain") || draggingFolderId);
+    handleDragEnd();
+    if (!draggedId) return;
+    await commitFolderMove(draggedId, { kind: "root" });
   }
 
   async function handleUpload(e: React.FormEvent) {
@@ -467,32 +490,20 @@ export default function AccountVaultPage() {
   }
 
   async function handleMoveFolder(folderId: number, direction: "up" | "down") {
-    const siblings = sortFolders(folders.filter((folder) => (folder.parent_id ?? null) === (folders.find((f) => f.id === folderId)?.parent_id ?? null)));
-    const currentIndex = siblings.findIndex((folder) => folder.id === folderId);
-    if (currentIndex === -1) return;
-    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= siblings.length) return;
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    const siblings = sortFolders(folders).filter(
+      (f) => (f.parent_id ?? null) === (folder.parent_id ?? null)
+    );
+    const currentIndex = siblings.findIndex((f) => f.id === folderId);
+    const swapIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (currentIndex === -1 || swapIndex < 0 || swapIndex >= siblings.length) return;
 
-    const reorderedSiblings = [...siblings];
-    const [moved] = reorderedSiblings.splice(currentIndex, 1);
-    reorderedSiblings.splice(targetIndex, 0, moved);
-    const siblingIds = new Set(reorderedSiblings.map((folder) => folder.id));
-
-    const nextFolders = folders.map((folder) => {
-      if (!siblingIds.has(folder.id)) return folder;
-      const newIndex = reorderedSiblings.findIndex((candidate) => candidate.id === folder.id);
-      return { ...folder, sort_order: newIndex };
+    await commitFolderMove(folderId, {
+      kind: "folder",
+      folderId: siblings[swapIndex].id,
+      position: direction === "up" ? "before" : "after",
     });
-
-    const previousFolders = folders;
-    setFolders(nextFolders);
-    try {
-      await syncFolderOrder(nextFolders);
-      await loadVault();
-    } catch (err) {
-      setFolders(previousFolders);
-      setError(err instanceof Error ? err.message : "Failed to reorder folder");
-    }
   }
 
   async function handleDeleteFolder(folderId: number) {
@@ -559,11 +570,17 @@ export default function AccountVaultPage() {
             <button
               type="button"
               onClick={() => setActiveFolderFilter(null)}
-              className={`mb-2 w-full rounded-md px-3 py-2 text-left text-sm ${
+              onDragOver={handleRootDragOver}
+              onDragLeave={() => setRootDropActive(false)}
+              onDrop={handleRootDrop}
+              className={`mb-2 w-full rounded-md px-3 py-2 text-left text-sm transition-all ${
                 activeFolderFilter === null ? "bg-violet-600/30" : "text-gray-300 hover:bg-white/5"
-              }`}
+              } ${rootDropActive ? "bg-blue-500/15 ring-1 ring-blue-400/70" : ""}`}
             >
               All items
+              {draggingFolderId != null && (
+                <span className="ml-2 text-[10px] uppercase tracking-wide text-blue-300">drop here for top level</span>
+              )}
             </button>
             <FolderTreeView
               folders={folders}
@@ -580,7 +597,7 @@ export default function AccountVaultPage() {
               onDragOver={handleDragOver}
               onDrop={handleDrop}
             />
-            <p className="mt-3 text-xs text-gray-500">Drag to reorder or create subfolders. To remove a sub folder, drag it into its parent folder.</p>
+            <p className="mt-3 text-xs text-gray-500">Drag folders to reorder or nest them. Drop a folder on &ldquo;All items&rdquo; to move it back to the top level.</p>
           </div>
 
           <form onSubmit={handleCreateFolder} className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-3">

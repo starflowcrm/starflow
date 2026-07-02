@@ -66,8 +66,8 @@ function isDescendant(folders: VaultFolder[], folderId: number, possibleAncestor
 }
 
 function computeDropPosition(ratio: number): DropPosition {
-  if (ratio < 0.25) return "before";
-  if (ratio > 0.75) return "after";
+  if (ratio < 1 / 3) return "before";
+  if (ratio > 2 / 3) return "after";
   return "inside";
 }
 
@@ -161,9 +161,10 @@ function FolderRow({
   onMove: (id: number, direction: "up" | "down") => void;
   onDragStart: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
-  onDragOver: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
-  onDrop: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
+  onDragOver: (folderId: number, e: React.DragEvent<HTMLElement>, rowEl: HTMLElement | null) => void;
+  onDrop: (folderId: number, e: React.DragEvent<HTMLElement>, rowEl: HTMLElement | null) => void;
 }) {
+  const rowRef = useRef<HTMLDivElement>(null);
   const isDragging = draggingFolderId === folder.id;
   const isSubfolder = depth > 0;
   const isPreviewBefore = dropPreview.folderId === folder.id && dropPreview.position === "before";
@@ -171,15 +172,27 @@ function FolderRow({
   const isPreviewAfter = dropPreview.folderId === folder.id && dropPreview.position === "after";
 
   return (
-    <div className={isSubfolder ? "ml-4 border-l border-white/10 pl-3" : ""}>
-      <div className={`pointer-events-none transition-all duration-150 ${isPreviewBefore ? "mb-2 h-3 rounded-full bg-blue-400/80 shadow-[0_0_12px_rgba(96,165,250,0.55)]" : "mb-0 h-0"}`} />
+    // The wrapper also catches drags so drops in the gaps between rows land;
+    // geometry is always measured against the row itself (rowRef), and the
+    // indicators are absolutely positioned overlays — nothing shifts layout
+    // mid-drag, which is what made drops miss before.
+    <div
+      onDragOver={(e) => onDragOver(folder.id, e, rowRef.current)}
+      onDrop={(e) => onDrop(folder.id, e, rowRef.current)}
+      className={isSubfolder ? "ml-4 border-l border-white/10 pl-3" : ""}
+    >
       <div
-        onDragOver={(e) => onDragOver(folder.id, e)}
-        onDrop={(e) => onDrop(folder.id, e)}
-        className={`group flex w-full items-center gap-2 rounded-md px-3 py-3 text-left text-sm transition-all duration-150 ${
+        ref={rowRef}
+        className={`group relative flex w-full items-center gap-2 rounded-md px-3 py-3 text-left text-sm ${
           activeFolderId === folder.id ? "bg-violet-600/30 text-white" : "text-gray-300 hover:bg-white/5"
-        } ${isDragging ? "opacity-50" : "opacity-100"} ${isSubfolder ? "bg-white/[0.03]" : ""} ${isPreviewInside ? "scale-[1.01] bg-blue-500/15 ring-1 ring-blue-400/70 shadow-[0_0_20px_rgba(96,165,250,0.18)]" : ""}`}
+        } ${isDragging ? "opacity-50" : "opacity-100"} ${isSubfolder ? "bg-white/[0.03]" : ""} ${isPreviewInside ? "bg-blue-500/15 ring-1 ring-blue-400/70 shadow-[0_0_20px_rgba(96,165,250,0.18)]" : ""}`}
       >
+        {isPreviewBefore && (
+          <div className="pointer-events-none absolute -top-[5px] left-0 right-0 h-[3px] rounded-full bg-blue-400 shadow-[0_0_10px_rgba(96,165,250,0.7)]" />
+        )}
+        {isPreviewAfter && (
+          <div className="pointer-events-none absolute -bottom-[5px] left-0 right-0 h-[3px] rounded-full bg-blue-400 shadow-[0_0_10px_rgba(96,165,250,0.7)]" />
+        )}
         <button
           type="button"
           draggable
@@ -208,7 +221,6 @@ function FolderRow({
           </button>
         </div>
       </div>
-      <div className={`pointer-events-none transition-all duration-150 ${isPreviewAfter ? "mt-2 h-3 rounded-full bg-blue-400/80 shadow-[0_0_12px_rgba(96,165,250,0.55)]" : "mt-0 h-0"}`} />
     </div>
   );
 }
@@ -239,8 +251,8 @@ function FolderTreeView({
   onMove: (id: number, direction: "up" | "down") => void;
   onDragStart: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
-  onDragOver: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
-  onDrop: (folderId: number, e: React.DragEvent<HTMLElement>) => void;
+  onDragOver: (folderId: number, e: React.DragEvent<HTMLElement>, rowEl: HTMLElement | null) => void;
+  onDrop: (folderId: number, e: React.DragEvent<HTMLElement>, rowEl: HTMLElement | null) => void;
 }) {
   const children = sortFolders(folders).filter((folder) => (folder.parent_id ?? null) === parentId);
   if (!children.length) return null;
@@ -394,13 +406,13 @@ export default function AccountVaultPage() {
     }
   }
 
-  function handleDragOver(folderId: number, e: React.DragEvent<HTMLElement>) {
+  function handleDragOver(folderId: number, e: React.DragEvent<HTMLElement>, rowEl: HTMLElement | null) {
     e.preventDefault();
     e.stopPropagation();
     const draggedId = Number(e.dataTransfer.getData("text/plain") || draggingFolderId);
     if (!draggedId || draggedId === folderId) return;
 
-    const rect = e.currentTarget.getBoundingClientRect();
+    const rect = (rowEl ?? e.currentTarget).getBoundingClientRect();
     const ratio = (e.clientY - rect.top) / rect.height;
     const position = computeDropPosition(ratio);
 
@@ -413,11 +425,11 @@ export default function AccountVaultPage() {
     });
   }
 
-  async function handleDrop(targetFolderId: number, e: React.DragEvent<HTMLElement>) {
+  async function handleDrop(targetFolderId: number, e: React.DragEvent<HTMLElement>, rowEl: HTMLElement | null) {
     e.preventDefault();
     e.stopPropagation();
     const draggedId = Number(e.dataTransfer.getData("text/plain") || draggingFolderId);
-    const rect = e.currentTarget.getBoundingClientRect();
+    const rect = (rowEl ?? e.currentTarget).getBoundingClientRect();
     const ratio = (e.clientY - rect.top) / rect.height;
     const position: DropPosition = computeDropPosition(ratio);
     handleDragEnd();
